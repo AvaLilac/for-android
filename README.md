@@ -13,6 +13,8 @@
 
 ## Description
 
+To Clarify. I Forked this repo to look at the code. there will not in this point in time be changes made to code as there is already a existing "better" Version made by 0simp
+
 The codebase includes the app itself, as well as an internal library for interacting with the Stoat
 API. The app is written in Kotlin, and wholly
 uses [Jetpack Compose](https://developer.android.com/jetpack/compose).
