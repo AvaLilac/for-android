@@ -1,5 +1,6 @@
 <div align="center">
-    <h1>Stoat for Android</h1>
+    <h1>AviaClient for Android</h1>
+    <h1>Based on Stoat For Android</h1>
     <p>Official <a href="https://stoat.chat">Stoat</a> Android app.</p>
     <br/><br/>
     <div>
