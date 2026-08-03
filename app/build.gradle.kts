@@ -1,20 +1,19 @@
 import com.mikepenz.aboutlibraries.plugin.StrictMode
 import io.sentry.android.gradle.instrumentation.logcat.LogcatLevel
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.io.FileInputStream
 import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.aboutlibraries)
-    alias(libs.plugins.hilt)
+    alias(libs.plugins.aboutlibraries.android)
     alias(libs.plugins.ksp)
     alias(libs.plugins.sentry.android)
     alias(libs.plugins.sqldelight)
     alias(libs.plugins.google.services)
-    id("kotlin-kapt")
     id("kotlin-parcelize")
 }
 
@@ -64,19 +63,12 @@ android {
         applicationId = "chat.revolt"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
-        versionCode = Integer.parseInt("001_004_000".replace("_", ""), 10)
-        versionName = "1.4.0"
+        versionCode = Integer.parseInt("001_007_001".replace("_", ""), 10)
+        versionName = "1.7.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
             useSupportLibrary = true
-        }
-
-        externalNativeBuild {
-            cmake {
-                arguments += listOf("-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON")
-                cppFlags("")
-            }
         }
     }
 
@@ -128,13 +120,11 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "17"
-    }
     buildFeatures {
         viewBinding = true
         compose = true
         buildConfig = true
+        resValues = true
     }
     packaging {
         resources {
@@ -144,15 +134,15 @@ android {
     androidResources {
         generateLocaleConfig = true
     }
-    externalNativeBuild {
-        cmake {
-            path(file("src/main/cpp/CMakeLists.txt"))
-            version = "3.22.1"
-        }
-    }
     lint {
         abortOnError = false
         disable += "MissingTranslation"
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget = JvmTarget.JVM_17
     }
 }
 
@@ -209,10 +199,6 @@ dependencies {
     debugImplementation(libs.compose.ui.tooling)
     debugImplementation(libs.compose.ui.test.manifest)
 
-    implementation(libs.hilt.android)
-    implementation(libs.hilt.navigation.compose)
-    ksp(libs.hilt.compiler)
-
     implementation(libs.glide)
     implementation(libs.glide.compose)
     ksp(libs.glide.ksp)
@@ -229,7 +215,6 @@ dependencies {
     implementation(libs.android.palette)
     implementation(libs.android.core.telecom)
     implementation(libs.android.core.splashscreen)
-    implementation(libs.android.constraintlayout)
     implementation(libs.android.constraintlayout.compose)
     implementation(libs.android.appcompat)
     implementation(libs.android.material)
@@ -258,9 +243,9 @@ dependencies {
     implementation(libs.jetbrains.markdown)
     implementation(libs.highlights)
 
-    // implementation(libs.livekit.android)
-    // implementation(libs.livekit.android.camerax)
-    // implementation(libs.livekit.android.compose)
+    implementation(libs.livekit.android)
+    implementation(libs.livekit.android.camerax)
+    implementation(libs.livekit.android.compose)
 
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.messaging)
@@ -272,28 +257,49 @@ dependencies {
 
     implementation(libs.square.logcat)
 
+    implementation(libs.koin)
+    implementation(libs.koin.compose)
+    implementation(libs.koin.compose.viewmodel.navigation)
+
+    implementation(libs.multiplatform.markdown.android)
+    implementation(libs.multiplatform.markdown.m3)
+    implementation(libs.multiplatform.markdown.coil3)
+    implementation(libs.multiplatform.markdown.code)
+
+    implementation(libs.coil.compose)
+    implementation(libs.coil.network.okhttp)
+
+    implementation(libs.ratex.android)
+
     androidTestImplementation(libs.android.test.core)
     androidTestImplementation(libs.android.test.rules)
+    androidTestImplementation(libs.android.test.espresso.core)
     androidTestImplementation(libs.compose.ui.test.junit4)
+    testImplementation(libs.junit4)
 }
 
 aboutLibraries {
-    additionalLicenses += listOf("ofl")
-    includePlatform = true
-    strictMode = StrictMode.FAIL
-    allowedLicenses += listOf(
-        "Apache-2.0",
-        "OFL",
-        "MIT",
-        "ASDKL",
-        "BSD-2-Clause",
-        "cmark",
-        "EPL-1.0",
-        "BSD-3-Clause",
-        "BSD License",
-        "ML Kit Terms of Service"
-    )
-    configPath = "compliance"
+    license {
+        strictMode = StrictMode.FAIL
+        allowedLicenses.addAll(
+            "Apache-2.0",
+            "ASDKL",
+            "BSD-2-Clause",
+            "BSD-3-Clause", "The 3-Clause BSD License",
+            "BSD License",
+            "EPL-1.0",
+            "MIT",
+            "ML Kit Terms of Service",
+            "OFL",
+            "Public Domain"
+        )
+        additionalLicenses.addAll("ofl")
+    }
+
+    collect {
+        includePlatform = true
+        configPath = file("../compliance")
+    }
 }
 
 sqldelight {

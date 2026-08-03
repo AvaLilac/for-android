@@ -5,7 +5,6 @@ import android.content.Intent
 import android.icu.text.DateFormat
 import android.net.Uri
 import android.text.format.DateUtils
-import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.browser.customtabs.CustomTabsIntent
@@ -35,7 +34,6 @@ import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -59,10 +57,10 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.net.toUri
 import chat.stoat.R
 import chat.stoat.activities.media.ImageViewActivity
 import chat.stoat.activities.media.VideoViewActivity
-import chat.stoat.api.STOAT_FILES
 import chat.stoat.api.StoatAPI
 import chat.stoat.api.internals.BrushCompat
 import chat.stoat.api.internals.MessageFlag
@@ -74,8 +72,6 @@ import chat.stoat.api.internals.solidColor
 import chat.stoat.api.routes.channel.react
 import chat.stoat.api.routes.channel.unreact
 import chat.stoat.api.routes.microservices.january.asJanuaryProxyUrl
-import chat.stoat.core.model.schemas.AutumnResource
-import chat.stoat.core.model.schemas.User
 import chat.stoat.api.settings.Experiments
 import chat.stoat.api.settings.LoadedSettings
 import chat.stoat.api.settings.MessageReplyStyle
@@ -84,14 +80,18 @@ import chat.stoat.callbacks.ActionChannel
 import chat.stoat.composables.generic.RemoteImage
 import chat.stoat.composables.generic.UserAvatar
 import chat.stoat.composables.generic.UserAvatarWidthPlaceholder
-import chat.stoat.composables.markdown.LocalMarkdownTreeConfig
-import chat.stoat.composables.markdown.RichMarkdown
+import chat.stoat.composables.markdown.prose.ChatMarkdown
+import chat.stoat.core.model.data.STOAT_FILES
+import chat.stoat.core.model.schemas.AutumnResource
+import chat.stoat.core.model.schemas.User
 import chat.stoat.internals.text.Gigamoji
+import chat.stoat.internals.text.GigamojiState
 import chat.stoat.internals.text.MessageProcessor
-import chat.stoat.markdown.jbm.JBM
-import chat.stoat.markdown.jbm.JBMRenderer
-import chat.stoat.markdown.jbm.LocalJBMarkdownTreeState
+import chat.stoat.internals.text.stripPUAChars
+import chat.stoat.internals.toNavigationAction
+import chat.stoat.internals.toStoatWebLinkOrNull
 import chat.stoat.persistence.KVStorage
+import com.mikepenz.markdown.model.State
 import kotlinx.coroutines.launch
 import chat.stoat.core.model.schemas.Message as MessageSchema
 
@@ -111,6 +111,17 @@ fun authorColour(message: MessageSchema): Brush {
         highestRole.colour?.let { BrushCompat.parseColour(it) }
             ?: defaultColour
     }
+}
+
+@Composable
+fun authorRoleIcon(message: MessageSchema): AutumnResource? {
+    val serverId = StoatAPI.channelCache[message.channel]?.server ?: return null
+
+    val highestRole = message.author?.let {
+        Roles.resolveHighestRole(serverId, it)
+    } ?: return null
+
+    return highestRole.icon
 }
 
 @Composable
@@ -143,6 +154,22 @@ fun authorName(message: MessageSchema): String {
     return member.nickname
         ?: StoatAPI.userCache[message.author]?.let { User.resolveDefaultName(it) }
         ?: stringResource(R.string.unknown)
+}
+
+fun authorPronouns(message: MessageSchema, author: User): String? {
+    val serverId = StoatAPI.channelCache[message.channel]?.server
+        ?: return author.pronouns
+
+    val memberPronouns = message.author
+        ?.let { StoatAPI.members.getMember(serverId, it) }
+        ?.pronouns
+
+    return memberPronouns ?: author.pronouns
+}
+
+internal fun messageTimestampText(pronouns: String?, timestamp: String): String {
+    val visiblePronouns = pronouns?.trim()?.takeIf { it.isNotEmpty() }
+    return visiblePronouns?.let { "$it · $timestamp" } ?: timestamp
 }
 
 @Composable
@@ -198,24 +225,37 @@ fun formatLongAsTime(time: Long): String {
 }
 
 @SuppressLint("UnusedBoxWithConstraintsScope")
-@OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class, JBM::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
 fun Message(
     message: MessageSchema,
+    onClick: () -> Unit = {},
     onMessageContextMenu: () -> Unit = {},
     onAvatarClick: () -> Unit = {},
     onNameClick: (() -> Unit)? = null,
     canReply: Boolean = false,
     onReply: () -> Unit = {},
     onAddReaction: () -> Unit = {},
+    onJumpToMessage: (String) -> Unit = {},
     fromWebhook: Boolean = false,
     webhookName: String? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    mdAst: State? = null
 ) {
     val author = StoatAPI.userCache[message.author] ?: return CircularProgressIndicator()
     val context = LocalContext.current
 
     val scope = rememberCoroutineScope()
+    val openMessageLinkOrBrowser: (String) -> Unit = { url ->
+        val stoatLink = url.toUri().toStoatWebLinkOrNull()
+        if (stoatLink != null) {
+            scope.launch {
+                ActionChannel.send(stoatLink.toNavigationAction())
+            }
+        } else {
+            viewUrlInBrowser(context, url)
+        }
+    }
     var kv by remember { mutableStateOf<KVStorage?>(null) }
     var showUsernameDiscriminator by remember { mutableStateOf(false) }
     var ignoreServerAvatar by remember { mutableStateOf(false) }
@@ -261,7 +301,7 @@ fun Message(
             Row(
                 modifier = Modifier
                     .combinedClickable(
-                        onClick = {},
+                        onClick = onClick,
                         onDoubleClick = {},
                         onLongClick = {
                             onMessageContextMenu()
@@ -320,19 +360,15 @@ fun Message(
                                     replyMessage.author
                                 )
                             } == true),
-                        ) {
-                            // TODO Add jump to message
-                            if (replyMessage == null) {
-                                Toast.makeText(context, "lmao prankd", Toast.LENGTH_SHORT).show()
-                            }
-                        }
+                            onMessageClick = onJumpToMessage,
+                        )
                     }
                 }
 
                 Row(
                     modifier = Modifier
                         .combinedClickable(
-                            onClick = {},
+                            onClick = onClick,
                             onDoubleClick = {
                                 if (canReply && LoadedSettings.messageReplyStyle == MessageReplyStyle.DoubleTap) {
                                     onReply()
@@ -400,6 +436,19 @@ fun Message(
                                     )
                                 )
 
+                                val roleIcon = authorRoleIcon(message)
+                                if (roleIcon != null) {
+                                    Spacer(modifier = Modifier.width(4.dp))
+
+                                    RemoteImage(
+                                        url = "$STOAT_FILES/icons/${roleIcon.id}",
+                                        contentScale = ContentScale.Fit,
+                                        description = null,
+                                        modifier = Modifier
+                                            .size(16.dp)
+                                    )
+                                }
+
                                 InlineBadges(
                                     bot = author.bot != null && message.masquerade == null,
                                     bridge = message.masquerade != null && author.bot != null,
@@ -416,7 +465,10 @@ fun Message(
                                 Spacer(modifier = Modifier.width(5.dp))
 
                                 Text(
-                                    text = formatLongAsTime(ULID.asTimestamp(message.id!!)),
+                                    text = messageTimestampText(
+                                        pronouns = authorPronouns(message, author),
+                                        timestamp = formatLongAsTime(ULID.asTimestamp(message.id!!))
+                                    ),
                                     fontSize = 12.sp,
                                     color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
                                     maxLines = 1,
@@ -440,38 +492,28 @@ fun Message(
 
                         key(message.content) {
                             message.content?.let {
-                                if (message.content!!.isBlank()) return@let // if only an attachment is sent
+                                val content = it.stripPUAChars()
+                                if (content.isBlank()) return@let // if only an attachment is sent
 
-                                if (Experiments.useKotlinBasedMarkdownRenderer.isEnabled) {
-                                    CompositionLocalProvider(
-                                        LocalJBMarkdownTreeState provides LocalJBMarkdownTreeState.current.copy(
-                                            currentServer = StoatAPI.channelCache[message.channel]?.server,
-                                            fontSizeMultiplier = Gigamoji.useGigamojiForMessage(
-                                                message.content!!
-                                            )
-                                                .let {
-                                                    if (it) 2f else 1f
-                                                }
-                                        )
-                                    ) {
-                                        Spacer(modifier = Modifier.height(2.dp))
-                                        JBMRenderer(message.content!!)
-                                    }
+                                val gigamoji = Gigamoji.useGigamojiForMessage(content)
+                                val fontSizeMultiplier = when (gigamoji) {
+                                    GigamojiState.Single -> 5f
+                                    GigamojiState.Multiple -> 2f
+                                    GigamojiState.None -> 1f
+                                }
+                                Spacer(modifier = Modifier.height(2.dp))
+                                if (mdAst != null) {
+                                    ChatMarkdown(
+                                        mdAst,
+                                        serverId = StoatAPI.channelCache[message.channel]?.server,
+                                        fontSizeMultiplier = fontSizeMultiplier,
+                                    )
                                 } else {
-                                    CompositionLocalProvider(
-                                        LocalMarkdownTreeConfig provides LocalMarkdownTreeConfig.current.copy(
-                                            currentServer = StoatAPI.channelCache[message.channel]?.server,
-                                            fontSizeMultiplier = Gigamoji.useGigamojiForMessage(
-                                                message.content!!
-                                            )
-                                                .let {
-                                                    if (it) 2f else 1f
-                                                }
-                                        )
-                                    ) {
-                                        Spacer(modifier = Modifier.height(2.dp))
-                                        RichMarkdown(input = message.content!!)
-                                    }
+                                    ChatMarkdown(
+                                        content = content,
+                                        serverId = StoatAPI.channelCache[message.channel]?.server,
+                                        fontSizeMultiplier = fontSizeMultiplier,
+                                    )
                                 }
                             }
                         }
@@ -531,9 +573,12 @@ fun Message(
                                         }
 
                                         Spacer(modifier = Modifier.height(8.dp))
-                                        Embed(embed = embed, onLinkClick = {
-                                            viewUrlInBrowser(context, it)
-                                        })
+                                        Embed(
+                                            embed = embed,
+                                            serverId = StoatAPI.channelCache[message.channel]?.server,
+                                            onLinkClick = {
+                                                openMessageLinkOrBrowser(it)
+                                            })
                                         Spacer(modifier = Modifier.height(8.dp))
                                     }
 
@@ -544,7 +589,7 @@ fun Message(
                                                 .clip(MaterialTheme.shapes.medium)
                                                 .clickable {
                                                     embed.url?.let {
-                                                        viewUrlInBrowser(context, it)
+                                                        openMessageLinkOrBrowser(it)
                                                     }
                                                 }
                                         ) {

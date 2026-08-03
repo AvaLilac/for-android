@@ -6,6 +6,8 @@
     <string name="ok">OK</string>
     <string name="cancel">Cancel</string>
     <string name="share">Share</string>
+    <string name="_new">New</string>
+    <string name="retry">Retry</string>
     <string name="lets_go">Let\'s go</string>
     <string name="loading">Fetching some info, hang in there…</string>
     <string name="rate_limit_toast">Hold your horses! You\'re doing that too often in a short amount of time.</string>
@@ -84,18 +86,34 @@
     <string name="mfa_password_header">Enter your password</string>
     <string name="mfa_password_lead">Enter your password to continue.</string>
 
+    <string name="mfa_prompt_title">Verify it\'s you</string>
+    <string name="mfa_prompt_lead">For your security, confirm this action with one of your verification methods.</string>
+    <string name="mfa_prompt_confirm">Confirm</string>
+    <string name="mfa_prompt_load_error_title">Something went wrong</string>
+    <string name="mfa_prompt_load_error_description">Your verification methods couldn\'t be loaded.</string>
+    <string name="mfa_prompt_retry">Retry</string>
+    <string name="mfa_prompt_no_methods_title">No methods available</string>
+    <string name="mfa_prompt_no_methods_description">This account doesn\'t have any verification methods that can authorise this action.</string>
+    <string name="mfa_prompt_close">Close</string>
+    <string name="mfa_method_password">Password</string>
+    <string name="mfa_method_totp">Authenticator app</string>
+    <string name="mfa_method_recovery">Recovery code</string>
+    <string name="mfa_error_invalid_credentials">Incorrect password. Please try again.</string>
+    <string name="mfa_error_invalid_token">That code wasn\'t accepted. It may be incorrect or expired. Please try again.</string>
+    <string name="mfa_error_disallowed_method">This verification method isn\'t allowed for this action.</string>
+    <string name="mfa_error_generic">Something went wrong (%1$s).</string>
+
     <string name="about">About</string>
     <string name="about_full_name">Stoat for Android</string>
     <string name="about_brought_to_you_by">Brought to you with ❤️ by the Stoat team.</string>
-    <string name="about_tab_version">Version</string>
-    <string name="about_tab_details">Details</string>
+    <string name="about_section_debug_information">Debug Information</string>
+    <string name="about_section_debug_information_description">If you\'re experiencing issues with the app, this information may be helpful to include when contacting support or submitting a bug report.</string>
+    <string name="about_section_debug_information_copy_as_json">Copy as JSON</string>
+    <string name="about_section_oss_licenses">Open Source Licenses</string>
 
-    <string name="oss_attribution">OSS Attribution</string>
-    <string name="oss_attribution_body">Stoat is built with the help of these awesome open-source projects.</string>
-    <string name="oss_attribution_body_2">We\'re grateful to the developers of these projects for making their work available to the world.</string>
-    <string name="oss_attribution_warning">The list below is automatically generated. It may be incomplete or inaccurate.</string>
-    <string name="oss_attribution_generation_date">Last updated: %1$s</string>
+    <string name="oss_attribution">OSS Licenses</string>
     <string name="oss_attribution_tap_to_view_license">Tap to view license</string>
+    <string name="oss_attribution_open_library_website">Open library website</string>
 
     <string name="comingsoon_toast">Sorry, this feature is not ready yet.</string>
 
@@ -103,6 +121,7 @@
     <string name="typing_one">%1$s is typing…</string>
     <string name="typing_many">%1$s are typing…</string>
     <string name="typing_several">Several people are typing</string>
+    <string name="slowmode_immune">Immune</string>
 
     <string name="send_alt">Send</string>
     <string name="pick_emoji_alt">Pick emoji</string>
@@ -152,10 +171,10 @@
     <string name="overview_screen_settings_description">Change your look, manage your account, and more</string>
     <string name="overview_screen_share_profile">Share Profile</string>
     <string name="overview_screen_share_profile_description">Take a look at your user card and get a special link to share</string>
-    <string name="overview_screen_changelog">Changelog</string>
-    <string name="overview_screen_changelog_description">Stoat never sleeps, take a look to see what\'s been in the works</string>
-    <string name="overview_screen_feedback">Provide Feedback</string>
-    <string name="overview_screen_feedback_description">Got something to say? We\'re all ears</string>
+    <string name="overview_screen_changelog">What\'s New?</string>
+    <string name="overview_screen_changelog_description">See what we\'ve been working on recently and what\'s coming up next</string>
+    <string name="overview_screen_join_lounge">Join the Stoat server</string>
+    <string name="overview_screen_join_lounge_description">Hang out with other Stoat users, give feedback, and see what\'s happening with Stoat</string>
     <string name="overview_screen_catch_up">Catch Up</string>
     <string name="overview_screen_catch_up_description">See what you\'ve missed while you were away</string>
     <string name="overview_screen_catch_up_none">All caught up</string>
@@ -186,10 +205,11 @@
     <string name="friends_scan_qr_result_sheet_missing_permission_description">You need to grant the camera permission to scan QR codes.</string>
     <string name="friends_scan_qr_result_sheet_success_title">Add friend?</string>
     <string name="friends_add_by_tag">Add with username and tag</string>
-    <string name="friends_add_by_tag_sheet_description">You can add friends by their %1$susername%3$s and %2$stag%3$s. For example, if their username is %1$sjane%3$s and their tag is %2$s1234%3$s, you can add them with %1$sjane%3$s#%2$s1234%3$s.</string>
+    <string name="friends_add_by_tag_sheet_description">You can add friends by their %1$susername%3$s and %2$stag%3$s. For example, if their username is %1$sToast%3$s and their tag is %2$s1234%3$s, you can add them with %1$sToast%3$s#%2$s1234%3$s.</string>
     <string name="friends_add_by_tag_sheet_username">Username</string>
     <string name="friends_add_by_tag_sheet_tag">Tag</string>
     <string name="friends_add_by_tag_sheet_add">Add</string>
+    <string name="friends_add_by_tag_sheet_do_not_add">Don\'t add</string>
     <string name="friends_add_by_tag_sheet_paste_from_clipboard">Paste clipboard</string>
     <string name="friends_add_by_tag_sheet_invalid_clipboard">The clipboard does not contain a valid username and tag.</string>
 
@@ -261,6 +281,7 @@
 
     <string name="message_blocked">Blocked message</string>
     <string name="message_failed_to_send">Failed to send, long press for options</string>
+    <string name="message_jump_failed">Couldn’t load that message</string>
 
     <string name="message_not_supported">Message cannot be displayed.</string>
     <string name="message_not_supported_with_context">Message cannot be displayed (%1$s).</string>
@@ -279,6 +300,7 @@
     <string name="system_message_user_joined_alt">User joined</string>
     <string name="system_message_message_pinned_alt">Message pinned</string>
     <string name="system_message_message_unpinned_alt">Message unpinned</string>
+    <string name="system_message_call_started_alt">Call started</string>
     <string name="system_message_text_alt">System message</string>
 
     <string name="system_message_ownership_changed">%1$s transferred ownership to %2$s</string>
@@ -293,6 +315,7 @@
     <string name="system_message_user_joined">%1$s joined</string>
     <string name="system_message_message_pinned">%1$s pinned a message to this channel</string>
     <string name="system_message_message_unpinned">%1$s unpinned a message from this channel</string>
+    <string name="system_message_call_started">%1$s started a call</string>
 
     <string name="today">Today</string>
     <string name="yesterday">Yesterday</string>
@@ -384,6 +407,15 @@
     <string name="pinned_messages">Pinned Messages</string>
     <string name="pinned_messages_view">View Pinned Messages</string>
     <string name="pinned_messages_empty">No pinned messages yet, maybe you should pin one?</string>
+
+    <string name="channel_search">Search Messages</string>
+    <string name="channel_search_hint">Search messages</string>
+    <string name="channel_search_prompt">Type to search for messages in this channel.</string>
+    <string name="channel_search_empty">No messages found for “%1$s”.</string>
+    <string name="channel_search_clear">Clear search</string>
+    <string name="channel_search_sort_relevance">Relevance</string>
+    <string name="channel_search_sort_latest">Latest</string>
+    <string name="channel_search_sort_oldest">Oldest</string>
 
     <string name="message_context_sheet_actions_copy">Copy</string>
     <string name="message_context_sheet_actions_copy_failed_empty">Message is empty, nothing to copy</string>
@@ -559,6 +591,7 @@
     <string name="invite_message">You\'ve been invited to join this server. Would you like to join?</string>
     <string name="invite_join">Join</string>
     <string name="invite_cancel">Cancel</string>
+    <string name="invite_open_server">Open</string>
     <string name="invite_already_member">You are already a member of this server.</string>
     <string name="invite_error_header">There was an error</string>
     <string name="invite_error_no_invite">No invite code was specified.</string>
@@ -596,7 +629,7 @@
     <string name="colour_picker_hex_use">Use</string>
     <string name="colour_picker_alpha">Alpha</string>
     <string name="colour_picker_preview">Preview</string>
-    <string name="colour_picker_use_default">Default</string>
+    <string name="colour_picker_use_default">Use Default</string>
     <string name="colour_picker_cancel">Cancel</string>
     <string name="colour_picker_apply">Apply</string>
 
@@ -650,10 +683,28 @@
 
     <string name="voice_action_disconnect">Disconnect</string>
 
+    <string name="voice_action_mute">Mute</string>
+    <string name="voice_action_unmute">Unmute</string>
+    <string name="voice_action_deafen">Deafen</string>
+    <string name="voice_action_undeafen">Undeafen</string>
+    <string name="voice_action_video">Video</string>
+    <string name="voice_action_screen_share">Share screen</string>
+    <string name="voice_action_flip_camera">Flip camera</string>
+
+    <string name="voice_audio_output">Audio output</string>
+    <string name="voice_audio_output_speaker">Speaker</string>
+    <string name="voice_audio_output_earpiece">Earpiece</string>
+    <string name="voice_audio_output_wired_headset">Wired headset</string>
+
     <string name="voice_status_connecting">Connecting…</string>
     <string name="voice_status_reconnecting">Reconnecting…</string>
     <string name="voice_status_connected">Connected</string>
     <string name="voice_status_disconnected">No connection</string>
+
+    <string name="voice_notification_ongoing_call">Connected to voice</string>
+    <string name="voice_banner_tap_to_return">Tap to return to the call</string>
+    <string name="voice_start_call">Start a call</string>
+    <string name="voice_notification_fallback_channel_name">Voice channel</string>
 
     <string name="spark_notifications_rationale">Stay in the loop</string>
     <string name="spark_notifications_rationale_description">Enable notifications to be kept up to date with messages and mentions.</string>
@@ -691,9 +742,75 @@
     <string name="settings_category_miscellaneous">Miscellaneous</string>
     <string name="settings_category_last" translatable="false">Stoat v%1$s</string>
 
+    <string name="settings_account">Login &amp; Security</string>
+    <string name="settings_account_email">Email</string>
+    <string name="settings_account_email_loading_error">Failed to load email</string>
+    <string name="settings_account_email_edit_alt">Change email</string>
+    <string name="settings_account_email_edit_title">Change your email</string>
+    <string name="settings_account_email_edit_current">Your current email is %1$s.</string>
+    <string name="settings_account_email_edit_message">Please enter your new email address and your current account password.</string>
+    <string name="settings_account_email_edit_new_email">New email address</string>
+    <string name="settings_account_email_edit_password">Current password</string>
+    <string name="settings_account_email_edit_confirm">Change</string>
+    <string name="settings_account_email_edit_cancel">Keep current</string>
+    <string name="settings_account_email_confirm_email">One more thing</string>
+    <string name="settings_account_email_confirm_email_message">We just emailed you to confirm your new email address. Please click the link in that email to complete the change, and then you\'ll be all set.</string>
+    <string name="settings_account_email_confirm_email_open_mail_app">Open mail app</string>
+    <string name="settings_account_email_confirm_email_dismiss">Got it</string>
+    <string name="settings_account_password">Password</string>
+    <string name="settings_account_password_edit_alt">Change password</string>
+    <string name="settings_account_password_edit_title">Change your password</string>
+    <string name="settings_account_password_edit_message">Please enter your current password and your new password.</string>
+    <string name="settings_account_password_edit_message_hint">Good passwords are at least 10 characters long and include a mix of letters, numbers, and symbols.</string>
+    <string name="settings_account_password_edit_new_password">New password</string>
+    <string name="settings_account_password_edit_current_password">Current password</string>
+    <string name="settings_account_password_edit_confirm">Change</string>
+    <string name="settings_account_password_edit_cancel">Keep current</string>
+    <string name="settings_account_password_change_success">Your password has been changed.</string>
+    <string name="settings_account_mfa">Two-Factor Authentication</string>
+    <string name="settings_account_mfa_warning">You don\'t have any 2FA methods set up. You should set up 2FA to add an extra layer of security to your account.</string>
+    <string name="settings_account_mfa_totp">Authenticator App</string>
+    <string name="settings_account_mfa_totp_upsell">Protect your account with an 6-digit code from apps like Google Authenticator or Authy.</string>
+    <string name="settings_account_mfa_totp_manage_alt">Manage Authenticator App</string>
+
+    <string name="settings_mfa">Two-Factor Authentication</string>
+    <string name="settings_mfa_status">Two-factor authentication is</string>
+    <string name="settings_mfa_status_enabled">enabled</string>
+    <string name="settings_mfa_status_not_set_up">not set up</string>
+    <string name="settings_mfa_status_not_set_up_description">You don\'t have any 2FA methods set up. You should set up 2FA to add an extra layer of security to your account.</string>
+    <string name="settings_mfa_totp">Authenticator App</string>
+    <string name="settings_mfa_disable_totp">Disable Authenticator App</string>
+    <string name="settings_mfa_disable_totp_description">Disabling your Authenticator App will remove it as a 2FA method for your account. You will no longer be able to use it to log in.</string>
+    <string name="settings_mfa_disable_totp_cta">Disable</string>
+    <string name="settings_mfa_enable_totp_description">Protect your account with 6-digit codes from apps like Google Authenticator, Aegis, or Authy.</string>
+    <string name="settings_mfa_enable_totp_cta">Set up</string>
+    <string name="settings_mfa_totp_setup_title">Set up your authenticator app</string>
+    <string name="settings_mfa_totp_setup_scan">Scan this QR code with your authenticator app.</string>
+    <string name="settings_mfa_totp_setup_manual">Or enter this key manually:</string>
+    <string name="settings_mfa_totp_setup_copy_secret">Copy key</string>
+    <string name="settings_mfa_totp_setup_code_lead">Then enter the 6-digit code the app shows:</string>
+    <string name="settings_mfa_totp_setup_code_label">6-digit code</string>
+    <string name="settings_mfa_totp_setup_verify">Verify and enable</string>
+    <string name="settings_mfa_totp_enabled_snackbar">Authenticator app enabled</string>
+    <string name="settings_mfa_totp_disabled_snackbar">Authenticator app disabled</string>
+    <string name="settings_mfa_recovery">Recovery Codes</string>
+    <string name="settings_mfa_recovery_description_active">Recovery codes let you regain access to your account if you lose your other 2FA methods. Keep them somewhere safe.</string>
+    <string name="settings_mfa_recovery_description_inactive">You don\'t have recovery codes yet. Generate them so you can regain access to your account if you lose your authenticator.</string>
+    <string name="settings_mfa_recovery_view_cta">View codes</string>
+    <string name="settings_mfa_recovery_regenerate_cta">Regenerate</string>
+    <string name="settings_mfa_recovery_generate_cta">Generate codes</string>
+    <string name="settings_mfa_recovery_dialog_title">Your recovery codes</string>
+    <string name="settings_mfa_recovery_dialog_hint">Each code can be used once. Store them somewhere safe — anyone with these codes can access your account.</string>
+    <string name="settings_mfa_recovery_copy">Copy all</string>
+    <string name="settings_mfa_recovery_dialog_done">Done</string>
+    <string name="settings_mfa_security_keys">Security Keys</string>
+    <string name="settings_mfa_security_keys_web_manage_description">You have security keys enabled on your account. You can view, add, and remove security keys your security keys from your account settings in a web browser.</string>
+    <string name="settings_mfa_security_keys_web_manage_cta">Open browser</string>
+
     <string name="settings_profile">Profile</string>
     <string name="settings_profile_profile_picture">Profile picture</string>
     <string name="settings_profile_custom_background">Custom background</string>
+    <string name="settings_profile_pronouns">Pronouns</string>
     <string name="settings_profile_save">Save</string>
 
     <string name="settings_sessions">Sessions</string>
@@ -772,16 +889,20 @@
     <string name="settings_chat_hint_poorly_formed_settings_keys_key_notifications">Notifications</string>
     <string name="settings_chat_hint_poorly_formed_settings_keys_key_ordering">Server Ordering</string>
     <string name="settings_chat_hint_poorly_formed_settings_keys_key_android">Stoat for Android</string>
+    <string name="settings_chat_hint_poorly_formed_settings_keys_key_release_notes">Release Notes</string>
     <string name="settings_chat_hint_poorly_formed_settings_keys_key_unknown">%1$s (unknown)</string>
     <string name="settings_chat_hint_poorly_formed_settings_keys_reset">Reset %1$s settings</string>
+
+    <string name="settings_notifications">Notifications</string>
+    <string name="settings_notifications_push">Push Notifications</string>
+    <string name="settings_notifications_push_description">Receive notifications for new messages, mentions, and other updates, even when you\'re not actively using the app.</string>
+    <string name="settings_notifications_system">System Settings</string>
+    <string name="settings_notifications_system_description">Manage notification permissions and preferences from your device\'s system settings.</string>
 
     <string name="settings_feedback">Feedback</string>
     <string name="settings_feedback_description">Join the Stoat server to give feedback or suggestions and report bugs.</string>
 
-    <string name="settings_changelogs">Changelogs</string>
-    <string name="settings_changelogs_new_header">What\'s been cooking ✨</string>
-    <string name="settings_changelogs_historical_version_header">Changelog for %1$s</string>
-    <string name="settings_changelogs_historical_version_header_placeholder">that version</string>
+    <string name="settings_changelog">What\'s New</string>
 
     <string name="settings_language">Language</string>
     <string name="settings_language_auto">System default</string>
@@ -825,6 +946,9 @@
     <string name="notification_channel_friend_requests_description">Incoming friend requests, as well as accepted requests you\'ve sent.</string>
     <string name="notification_channel_messages">Messages</string>
     <string name="notification_channel_messages_description">Unread messages from your conversations and channels.</string>
+    <string name="notification_channel_group_voice">Voice</string>
+    <string name="notification_channel_ongoing_call">Ongoing calls</string>
+    <string name="notification_channel_ongoing_call_description">Shown persistently while you are connected to a voice channel.</string>
 
     <string name="keyboard_shortcut_messaging">Messaging</string>
     <string name="keyboard_shortcut_messaging_new_line">New Line</string>
@@ -835,4 +959,8 @@
     <string name="geogate_description">Stoat may block content in certain jurisdictions in response to legislation or legal notices</string>
     <string name="geogate_description_variant_osa_uk_25" translatable="false">This channel is not available in your region while we review options on legal compliance.</string>
     <string name="geogate_acknowledge">Acknowledge</string>
+
+    <string name="changelog_header">What\'s new</string>
+    <string name="changelog_load_error">There was an error loading the changelog.</string>
+    <string name="changelog_retry">Retry</string>
 </resources>

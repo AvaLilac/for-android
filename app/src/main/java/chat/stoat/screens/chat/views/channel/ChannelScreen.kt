@@ -6,6 +6,7 @@ import android.content.ContentValues
 import android.content.res.Configuration
 import android.net.Uri
 import android.os.Environment
+import android.os.SystemClock
 import android.provider.MediaStore
 import android.util.DisplayMetrics
 import android.util.Log
@@ -17,15 +18,21 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateIntAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -44,6 +51,7 @@ import androidx.compose.foundation.layout.imeAnimationTarget
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.foundation.layout.size
@@ -53,20 +61,28 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SmallFloatingActionButton
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -77,6 +93,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -86,10 +103,12 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.Placeholder
@@ -103,8 +122,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import androidx.documentfile.provider.DocumentFile
-import androidx.hilt.navigation.compose.hiltViewModel
 import chat.stoat.R
 import chat.stoat.StoatApplication
 import chat.stoat.activities.StoatTweenDp
@@ -116,14 +135,12 @@ import chat.stoat.api.internals.PermissionBit
 import chat.stoat.api.internals.has
 import chat.stoat.api.routes.channel.react
 import chat.stoat.api.routes.microservices.autumn.FileArgs
-import chat.stoat.api.settings.Experiments
 import chat.stoat.callbacks.Action
 import chat.stoat.callbacks.ActionChannel
 import chat.stoat.composables.chat.DateDivider
 import chat.stoat.composables.chat.Message
 import chat.stoat.composables.chat.MessageField
 import chat.stoat.composables.chat.SystemMessage
-import chat.stoat.composables.chat.UnsupportedMessage
 import chat.stoat.composables.emoji.EmojiPicker
 import chat.stoat.composables.generic.GroupIcon
 import chat.stoat.composables.generic.PresenceBadge
@@ -139,6 +156,7 @@ import chat.stoat.composables.screens.chat.atoms.RegularMessage
 import chat.stoat.composables.screens.chat.molecules.JoinVoiceChannelButton
 import chat.stoat.composables.skeletons.MessageSkeleton
 import chat.stoat.composables.skeletons.MessageSkeletonVariant
+import chat.stoat.composables.voice.VoiceCallBanner
 import chat.stoat.core.model.schemas.ChannelType
 import chat.stoat.core.model.schemas.Message
 import chat.stoat.internals.extensions.rememberChannelPermissions
@@ -147,24 +165,26 @@ import chat.stoat.screens.chat.LocalIsConnected
 import chat.stoat.sheets.ChannelInfoSheet
 import chat.stoat.sheets.MessageContextSheet
 import chat.stoat.sheets.ReactSheet
+import com.mikepenz.markdown.model.State
 import com.valentinilk.shimmer.ShimmerBounds
 import com.valentinilk.shimmer.rememberShimmer
 import com.valentinilk.shimmer.shimmer
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.datetime.Instant
+import org.koin.androidx.compose.koinViewModel
 import java.io.File
 import kotlin.math.max
 
 sealed class ChannelScreenItem {
-    data class RegularMessage(val message: Message) : ChannelScreenItem()
-    data class ProspectiveMessage(val message: Message) : ChannelScreenItem()
-    data class FailedMessage(val message: Message) : ChannelScreenItem()
+    data class RegularMessage(val message: Message, val mdAst: State?) : ChannelScreenItem()
+    data class ProspectiveMessage(val message: Message, val mdAst: State?) : ChannelScreenItem()
+    data class FailedMessage(val message: Message, val mdAst: State?) : ChannelScreenItem()
     data class SystemMessage(val message: Message) : ChannelScreenItem()
     data class DateDivider(val instant: Instant) : ChannelScreenItem()
-    data class LoadTrigger(val after: String?, val before: String?) :
-        ChannelScreenItem()
-
+    data class LoadTrigger(val after: String?, val before: String?) : ChannelScreenItem()
     data object Loading : ChannelScreenItem()
 }
 
@@ -186,7 +206,10 @@ private fun pxAsDp(px: Int): Dp {
 private const val NOT_ENOUGH_SPACE_FOR_PANES_THRESHOLD = 500
 
 @SuppressLint("UnusedBoxWithConstraintsScope")
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(
+    ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class,
+    ExperimentalMaterial3ExpressiveApi::class
+)
 @Composable
 fun ChannelScreen(
     channelId: String,
@@ -198,16 +221,15 @@ fun ChannelScreen(
     drawerIsOpen: Boolean = false,
     backButtonAction: (() -> Unit)? = null,
     useChatUI: Boolean = false,
-    viewModel: ChannelScreenViewModel = hiltViewModel()
+    requestedMessageId: String? = null,
+    onRequestedMessageConsumed: () -> Unit = {},
+    viewModel: ChannelScreenViewModel = koinViewModel()
 ) {
     // <editor-fold desc="State and effects">
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val resources = LocalResources.current
     val config = LocalConfiguration.current
-
-    LaunchedEffect(Unit) {
-        viewModel.listenToWsEvents()
-    }
 
     DisposableEffect(Unit) {
         val job = scope.launch { viewModel.listenToUiCallbacks() }
@@ -219,9 +241,45 @@ fun ChannelScreen(
     // </editor-fold>
     // <editor-fold desc="Load/switch channel">
     val channelPermissions by rememberChannelPermissions(channelId, viewModel.ensuredSelfMember)
+    val slowmodeSeconds = StoatAPI.channelCache[channelId]?.slowmode?.takeIf { it > 0 }
+    val slowmodeEnabled = slowmodeSeconds != null
+    val slowmodeImmune = channelPermissions has PermissionBit.BypassSlowmode
+    val activeSlowmode = StoatAPI.userSlowmodeCache[channelId]
+    var slowmodeNowMilliseconds by remember(channelId, activeSlowmode?.expiresAtMilliseconds) {
+        mutableLongStateOf(SystemClock.elapsedRealtime())
+    }
+
+    LaunchedEffect(
+        channelId,
+        activeSlowmode?.expiresAtMilliseconds,
+        slowmodeEnabled,
+        slowmodeImmune,
+    ) {
+        if (!slowmodeEnabled || slowmodeImmune || activeSlowmode == null) {
+            return@LaunchedEffect
+        }
+
+        while (true) {
+            slowmodeNowMilliseconds = SystemClock.elapsedRealtime()
+            if (activeSlowmode.remainingSeconds(slowmodeNowMilliseconds) <= 0) break
+
+            delay(1_000)
+        }
+    }
+
+    val slowmodeRemainingSeconds =
+        activeSlowmode?.remainingSeconds(slowmodeNowMilliseconds) ?: 0
+    val slowmodeActive =
+        slowmodeEnabled && !slowmodeImmune && slowmodeRemainingSeconds > 0
 
     LaunchedEffect(channelId) {
         viewModel.switchChannel(channelId)
+    }
+    LaunchedEffect(channelId, requestedMessageId) {
+        val messageId = requestedMessageId ?: return@LaunchedEffect
+        snapshotFlow { viewModel.channelId }.first { it == channelId }
+        viewModel.requestJump(messageId)
+        onRequestedMessageConsumed()
     }
     // </editor-fold>
     // <editor-fold desc="Keyboard height handling">
@@ -351,7 +409,7 @@ fun ChannelScreen(
         } catch (e: Exception) {
             Toast.makeText(
                 context,
-                context.getString(
+                resources.getString(
                     R.string.file_picker_chip_camera_failed
                 ),
                 Toast.LENGTH_SHORT
@@ -367,7 +425,7 @@ fun ChannelScreen(
         } catch (e: Exception) {
             Toast.makeText(
                 context,
-                context.getString(
+                resources.getString(
                     R.string.file_picker_chip_camera_none_installed
                 ),
                 Toast.LENGTH_SHORT
@@ -389,15 +447,18 @@ fun ChannelScreen(
     // </editor-fold>
     // <editor-fold desc="UI elements">
     val lazyListState = rememberLazyListState()
+    val snackbarHostState = remember { SnackbarHostState() }
     var disableScroll by remember { mutableStateOf(false) }
+    var highlightedMessageId by remember { mutableStateOf<String?>(null) }
+    val showBottomAnchor = !viewModel.canLoadNewer && !viewModel.isJumpLoading
 
-    val isScrolledToBottom = remember(lazyListState) {
+    val isScrolledToBottom = remember(lazyListState, viewModel) {
         derivedStateOf {
-            lazyListState.firstVisibleItemIndex <= 6
+            !viewModel.canLoadNewer && lazyListState.firstVisibleItemIndex <= 6
         }
     }
 
-    val isNearTop = remember(lazyListState) {
+    val isNearOlderEdge = remember(lazyListState) {
         derivedStateOf {
             val layoutInfo = lazyListState.layoutInfo
             val totalItemsNumber = layoutInfo.totalItemsCount
@@ -410,31 +471,119 @@ fun ChannelScreen(
     }
 
     val scrollDownFABPadding by animateDpAsState(
-        if (viewModel.typingUsers.isNotEmpty()) 25.dp else 0.dp,
+        if (viewModel.typingUsers.isNotEmpty() || slowmodeEnabled) 25.dp else 0.dp,
         animationSpec = StoatTweenDp,
         label = "ScrollDownFABPadding"
     )
 
-    // Load more messages when we reach the top of the list
-    // TODO: Temp - use LoadTrigger instead
-
-    LaunchedEffect(isNearTop) {
-        snapshotFlow { isNearTop.value }
+    LaunchedEffect(lazyListState) {
+        snapshotFlow {
+            Triple(
+                isNearOlderEdge.value,
+                viewModel.canLoadOlder,
+                viewModel.isLoadingOlder,
+            )
+        }
             .distinctUntilChanged()
-            .collect { isNearTop ->
-                if (isNearTop) {
+            .collect { (isNearEdge, canLoad, isLoading) ->
+                if (isNearEdge && canLoad && !isLoading) {
                     Log.d("ChannelScreen", "Loading more messages")
-                    viewModel.loadMessages(before = viewModel.items.lastOrNull {
-                        it is ChannelScreenItem.RegularMessage || it is ChannelScreenItem.SystemMessage
-                    }?.let {
-                        when (it) {
-                            is ChannelScreenItem.RegularMessage -> it.message.id
-                            is ChannelScreenItem.SystemMessage -> it.message.id
-                            else -> null
-                        }
-                    }, amount = 50)
+                    viewModel.loadOlder()
                 }
             }
+    }
+
+    LaunchedEffect(lazyListState) {
+        snapshotFlow {
+            Triple(
+                lazyListState.firstVisibleItemIndex <= 6,
+                viewModel.canLoadNewer,
+                viewModel.isLoadingNewer,
+            )
+        }
+            .distinctUntilChanged()
+            .collect { (isNearEdge, canLoad, isLoading) ->
+                if (isNearEdge && canLoad && !isLoading) viewModel.loadNewer()
+            }
+    }
+
+    LaunchedEffect(viewModel.scrollRequest) {
+        val request = viewModel.scrollRequest ?: return@LaunchedEffect
+        when (request) {
+            is ChannelScrollRequest.Bottom -> lazyListState.scrollToItem(0)
+            is ChannelScrollRequest.FocusMessage -> {
+                val itemIndex =
+                    viewModel.items.indexOfFirst { it.messageIdOrNull() == request.messageId }
+                if (itemIndex >= 0) {
+                    val bottomAnchorOffset = if (showBottomAnchor) 1 else 0
+                    val lazyItemIndex = itemIndex + bottomAnchorOffset
+                    val visibleItemsBeforeJump = lazyListState.layoutInfo.visibleItemsInfo
+                    val targetIsVisible = visibleItemsBeforeJump
+                        .any { it.key == request.messageId }
+                    val targetWasAboveViewport =
+                        visibleItemsBeforeJump.isNotEmpty() &&
+                                lazyItemIndex > visibleItemsBeforeJump.maxOf { it.index }
+                    if (!targetIsVisible) {
+                        // Off-screen lazy items must be measured before exact centering
+                        // so we snap the target into the viewport, then animate the centering distance
+                        lazyListState.scrollToItem(lazyItemIndex)
+                    }
+                    var target = checkNotNull(
+                        snapshotFlow {
+                            lazyListState.layoutInfo.visibleItemsInfo
+                                .firstOrNull { it.key == request.messageId }
+                        }.first { it != null }
+                    )
+                    var viewportCenter =
+                        (lazyListState.layoutInfo.viewportStartOffset +
+                                lazyListState.layoutInfo.viewportEndOffset) / 2
+                    var targetCenter = target.offset + target.size / 2
+                    var centerOffset = (targetCenter - viewportCenter).toFloat()
+                    if (request.animated && !targetIsVisible && targetWasAboveViewport) {
+                        // scrollToItem anchors at the bottom in this reversed list. Here we mirror
+                        // an older target to the top so its centering animation comes from the same
+                        // side of the viewport where the message was located.
+                        lazyListState.scrollBy(centerOffset * 2)
+                        target = checkNotNull(
+                            lazyListState.layoutInfo.visibleItemsInfo
+                                .firstOrNull { it.key == request.messageId }
+                        )
+                        viewportCenter =
+                            (lazyListState.layoutInfo.viewportStartOffset +
+                                    lazyListState.layoutInfo.viewportEndOffset) / 2
+                        targetCenter = target.offset + target.size / 2
+                        centerOffset = (targetCenter - viewportCenter).toFloat()
+                    }
+                    if (request.animated) {
+                        lazyListState.animateScrollBy(
+                            value = centerOffset,
+                            animationSpec = StoatTweenFloat,
+                        )
+                    } else {
+                        lazyListState.scrollBy(centerOffset)
+                    }
+                    highlightedMessageId = request.messageId
+                    delay(1_500)
+                    if (highlightedMessageId == request.messageId) {
+                        highlightedMessageId = null
+                    }
+                }
+            }
+        }
+        viewModel.consumeScrollRequest(request.requestId)
+    }
+
+    LaunchedEffect(viewModel.jumpFailure) {
+        val failure = viewModel.jumpFailure ?: return@LaunchedEffect
+        val result = snackbarHostState.showSnackbar(
+            message = resources.getString(R.string.message_jump_failed),
+            actionLabel = resources.getString(R.string.retry),
+            duration = SnackbarDuration.Long,
+        )
+        viewModel.consumeJumpFailure(failure.requestId)
+        if (result == SnackbarResult.ActionPerformed) {
+            viewModel.requestJump(failure.messageId)
+        }
     }
     // </editor-fold>
     // <editor-fold desc="Sheets">
@@ -639,8 +788,44 @@ fun ChannelScreen(
                                 )
                             }
                         }
+                    },
+                    actions = {
+                        val isDmLike =
+                            viewModel.channel?.channelType == ChannelType.DirectMessage ||
+                                    viewModel.channel?.channelType == ChannelType.Group
+                        if (isDmLike &&
+                            viewModel.channel?.voice == null &&
+                            StoatAPI.voiceStateCache[channelId]?.participants.isNullOrEmpty() &&
+                            channelPermissions has PermissionBit.Connect
+                        ) {
+                            IconButton(onClick = {
+                                scope.launch {
+                                    ActionChannel.send(
+                                        Action.OpenVoiceChannelOverlay(channelId)
+                                    )
+                                }
+                            }) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_call_24dp__fill),
+                                    contentDescription = stringResource(id = R.string.voice_start_call)
+                                )
+                            }
+                        }
+                        IconButton(onClick = {
+                            scope.launch {
+                                ActionChannel.send(
+                                    Action.TopNavigate("channel/$channelId/search")
+                                )
+                            }
+                        }) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_search_24dp),
+                                contentDescription = stringResource(id = R.string.channel_search)
+                            )
+                        }
                     }
                 )
+                VoiceCallBanner()
             }
         }
     ) { pv ->
@@ -684,12 +869,11 @@ fun ChannelScreen(
                                 reverseLayout = true,
                                 contentPadding = PaddingValues(top = 16.dp, bottom = 32.dp)
                             ) {
-
-                                // If we don't have a guaranteed first item, the message list will not scroll
-                                // to the bottom when new messages are added. Evil hack to make our other evil
-                                // hack (clear/addAll) work. Too bad!
-                                item(key = "guaranteed_first") {
-                                    Box {}
+                                if (showBottomAnchor) {
+                                    // Hack - Too bad!
+                                    item(key = "guaranteed_first") {
+                                        Spacer(Modifier.height(1.dp))
+                                    }
                                 }
 
                                 items(
@@ -725,127 +909,171 @@ fun ChannelScreen(
                                     if (index < 0 || index >= viewModel.items.size) {
                                         return@items
                                     }
-                                    when (val item = viewModel.items[index]) {
-                                        is ChannelScreenItem.RegularMessage -> {
-                                            if (item.message.content?.replace("\\s".toRegex(), "")
-                                                    ?.contains(">>>>>>>") == true
-                                            ) {
-                                                // FIXME Dirty hack to prevent a crash caused by malicious messages.
-                                                UnsupportedMessage()
-                                                return@items
-                                            }
-
-                                            RegularMessage(
-                                                item.message,
-                                                viewModel.channel,
-                                                drawerIsOpen = drawerIsOpen,
-                                                setDrawerGestureEnabled = {
-                                                    setDrawerGestureEnabled(it)
-                                                },
-                                                setDisableScroll = {
-                                                    disableScroll = it
-                                                },
-                                                showMessageBottomSheet = {
-                                                    messageContextSheetTarget = it
-                                                    messageContextSheetShown = true
-                                                },
-                                                showReactBottomSheet = {
-                                                    item.message.id?.let {
-                                                        reactSheetTarget = it
-                                                        reactSheetShown = true
-                                                    }
-                                                },
-                                                putTextAtCursorPosition = viewModel::putAtCursorPosition,
-                                                replyToMessage = viewModel::addReplyTo,
-                                                scope = scope
-                                            )
-                                        }
-
-                                        is ChannelScreenItem.ProspectiveMessage -> {
-                                            Box(Modifier.alpha(0.5f)) {
-                                                Message(
-                                                    message = item.message,
-                                                    onMessageContextMenu = {
-                                                        // TODO Context menu that allows you to cancel send
+                                    val item = viewModel.items[index]
+                                    val messageId = item.messageIdOrNull()
+                                    val isHighlighted =
+                                        highlightedMessageId?.let { it == messageId } == true
+                                    val highlightColor by animateColorAsState(
+                                        targetValue = if (isHighlighted) {
+                                            MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+                                        } else {
+                                            Color.Transparent
+                                        },
+                                        animationSpec = tween(durationMillis = 500),
+                                        label = "messageJumpHighlight",
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .background(highlightColor)
+                                    ) {
+                                        when (item) {
+                                            is ChannelScreenItem.RegularMessage -> {
+                                                RegularMessage(
+                                                    item.message,
+                                                    viewModel.channel,
+                                                    drawerIsOpen = drawerIsOpen,
+                                                    setDrawerGestureEnabled = {
+                                                        setDrawerGestureEnabled(it)
                                                     },
-                                                    onAvatarClick = {},
-                                                    onNameClick = {},
-                                                    canReply = false,
-                                                    onReply = {},
-                                                    onAddReaction = {}
+                                                    setDisableScroll = {
+                                                        disableScroll = it
+                                                    },
+                                                    showMessageBottomSheet = {
+                                                        messageContextSheetTarget = it
+                                                        messageContextSheetShown = true
+                                                    },
+                                                    showReactBottomSheet = {
+                                                        item.message.id?.let {
+                                                            reactSheetTarget = it
+                                                            reactSheetShown = true
+                                                        }
+                                                    },
+                                                    putTextAtCursorPosition = viewModel::putAtCursorPosition,
+                                                    replyToMessage = viewModel::addReplyTo,
+                                                    jumpToMessage = viewModel::requestJump,
+                                                    scope = scope,
+                                                    mdAst = item.mdAst
                                                 )
                                             }
-                                        }
 
-                                        is ChannelScreenItem.FailedMessage -> {
-                                            CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.error) {
-                                                Column {
+                                            is ChannelScreenItem.ProspectiveMessage -> {
+                                                Box(Modifier.alpha(0.5f)) {
                                                     Message(
                                                         message = item.message,
-                                                        onMessageContextMenu = {},
+                                                        onMessageContextMenu = {
+                                                            // TODO Context menu that allows you to cancel send
+                                                        },
                                                         onAvatarClick = {},
                                                         onNameClick = {},
                                                         canReply = false,
                                                         onReply = {},
-                                                        onAddReaction = {}
+                                                        onAddReaction = {},
+                                                        mdAst = item.mdAst,
                                                     )
-                                                    Row {
-                                                        UserAvatarWidthPlaceholder()
-                                                        Text(
-                                                            stringResource(R.string.message_failed_to_send),
-                                                            style = MaterialTheme.typography.bodyMedium,
-                                                            color = MaterialTheme.colorScheme.error.copy(
-                                                                alpha = 0.8f
-                                                            ),
-                                                            modifier = Modifier.padding(
-                                                                top = 4.dp,
-                                                                bottom = 4.dp,
-                                                                start = 20.dp
-                                                            )
+                                                }
+                                            }
+
+                                            is ChannelScreenItem.FailedMessage -> {
+                                                CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.error) {
+                                                    Column {
+                                                        Message(
+                                                            message = item.message,
+                                                            onMessageContextMenu = {},
+                                                            onAvatarClick = {},
+                                                            onNameClick = {},
+                                                            canReply = false,
+                                                            onReply = {},
+                                                            onAddReaction = {},
+                                                            mdAst = item.mdAst,
                                                         )
+                                                        Row {
+                                                            UserAvatarWidthPlaceholder()
+                                                            Text(
+                                                                stringResource(R.string.message_failed_to_send),
+                                                                style = MaterialTheme.typography.bodyMedium,
+                                                                color = MaterialTheme.colorScheme.error.copy(
+                                                                    alpha = 0.8f
+                                                                ),
+                                                                modifier = Modifier.padding(
+                                                                    top = 4.dp,
+                                                                    bottom = 4.dp,
+                                                                    start = 20.dp
+                                                                )
+                                                            )
+                                                        }
                                                     }
                                                 }
                                             }
-                                        }
 
-                                        is ChannelScreenItem.SystemMessage -> {
-                                            SystemMessage(message = item.message)
-                                        }
-
-                                        is ChannelScreenItem.DateDivider -> {
-                                            DateDivider(instant = item.instant)
-                                        }
-
-                                        is ChannelScreenItem.LoadTrigger -> {
-                                            LaunchedEffect(Unit) {
-                                                Log.d(
-                                                    "ChannelScreen",
-                                                    "LoadTrigger: After ${item.after} Before ${item.before}"
-                                                )
+                                            is ChannelScreenItem.SystemMessage -> {
+                                                SystemMessage(message = item.message)
                                             }
-                                        }
 
-                                        is ChannelScreenItem.Loading -> {
-                                            Column(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .shimmer(rememberShimmer(ShimmerBounds.Window)),
-                                                horizontalAlignment = Alignment.CenterHorizontally,
-                                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                                            ) {
-                                                MessageSkeleton(MessageSkeletonVariant.One)
-                                                MessageSkeleton(MessageSkeletonVariant.Two)
-                                                MessageSkeleton(MessageSkeletonVariant.Three)
+                                            is ChannelScreenItem.DateDivider -> {
+                                                DateDivider(instant = item.instant)
+                                            }
+
+                                            is ChannelScreenItem.LoadTrigger -> {
+                                                LaunchedEffect(Unit) {
+                                                    Log.d(
+                                                        "ChannelScreen",
+                                                        "LoadTrigger: After ${item.after} Before ${item.before}"
+                                                    )
+                                                }
+                                            }
+
+                                            is ChannelScreenItem.Loading -> {
+                                                Column(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .shimmer(rememberShimmer(ShimmerBounds.Window)),
+                                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                                ) {
+                                                    MessageSkeleton(MessageSkeletonVariant.One)
+                                                    MessageSkeleton(MessageSkeletonVariant.Two)
+                                                    MessageSkeleton(MessageSkeletonVariant.Three)
+                                                }
                                             }
                                         }
                                     }
                                 }
                             }
 
-                            TypingIndicator(
-                                users = viewModel.typingUsers,
-                                serverId = viewModel.channel?.server
-                            )
+                            androidx.compose.animation.AnimatedVisibility(
+                                visible = viewModel.isJumpLoading,
+                                modifier = Modifier.align(Alignment.Center),
+                                enter = scaleIn(
+                                    animationSpec = StoatTweenFloat,
+                                    initialScale = 0.8f,
+                                ) + fadeIn(animationSpec = StoatTweenFloat),
+                                exit = scaleOut(
+                                    animationSpec = StoatTweenFloat,
+                                    targetScale = 0.8f,
+                                ) + fadeOut(animationSpec = StoatTweenFloat),
+                            ) {
+                                LoadingIndicator()
+                            }
+
+                            Column(
+                                modifier = Modifier
+                                    .align(Alignment.BottomCenter)
+                                    .fillMaxWidth()
+                                    .zIndex(1f)
+                            ) {
+                                SnackbarHost(
+                                    hostState = snackbarHostState,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                TypingIndicator(
+                                    users = viewModel.typingUsers,
+                                    serverId = viewModel.channel?.server,
+                                    slowmodeSeconds = slowmodeSeconds,
+                                    slowmodeRemainingSeconds = slowmodeRemainingSeconds,
+                                    slowmodeImmune = slowmodeImmune,
+                                )
+                            }
 
                             androidx.compose.animation.AnimatedVisibility(
                                 !isScrolledToBottom.value,
@@ -858,23 +1086,55 @@ fun ChannelScreen(
                                     targetOffsetY = { it }
                                 ) + fadeOut(animationSpec = StoatTweenFloat)
                             ) {
-                                SmallFloatingActionButton(
+                                BadgedBox(
                                     modifier = Modifier
                                         .padding(bottom = scrollDownFABPadding)
                                         .align(Alignment.BottomCenter)
                                         .padding(16.dp),
-                                    onClick = {
-                                        scope.launch {
-                                            lazyListState.animateScrollToItem(0)
+                                    badge = {
+                                        androidx.compose.animation.AnimatedVisibility(
+                                            visible = viewModel.hasUnseenNewMessages,
+                                            modifier = Modifier.offset(x = (-4).dp, y = 0.dp),
+                                            enter = scaleIn(
+                                                animationSpec = StoatTweenFloat,
+                                                initialScale = 0.5f,
+                                            ) + fadeIn(animationSpec = StoatTweenFloat),
+                                            exit = scaleOut(
+                                                animationSpec = StoatTweenFloat,
+                                                targetScale = 0.5f,
+                                            ) + fadeOut(animationSpec = StoatTweenFloat),
+                                        ) {
+                                            Badge(
+                                                containerColor = MaterialTheme.colorScheme.primary
+                                            ) {
+                                                Text(stringResource(R.string._new))
+                                            }
                                         }
-                                    },
-                                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                                    }
                                 ) {
-                                    Icon(
-                                        painter = painterResource(R.drawable.ic_south_24dp),
-                                        contentDescription = stringResource(R.string.scroll_to_bottom)
-                                    )
+                                    SmallFloatingActionButton(
+                                        onClick = {
+                                            if (
+                                                viewModel.canLoadNewer ||
+                                                viewModel.hasUnseenNewMessages
+                                            ) {
+                                                viewModel.loadLatest(requestScrollToBottom = true)
+                                            } else {
+                                                scope.launch {
+                                                    lazyListState.animateScrollToItem(0)
+                                                }
+                                            }
+                                        },
+                                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                                    ) {
+                                        Icon(
+                                            painter = painterResource(R.drawable.ic_south_24dp),
+                                            contentDescription = stringResource(
+                                                R.string.scroll_to_bottom
+                                            )
+                                        )
+                                    }
                                 }
                             }
 
@@ -952,9 +1212,16 @@ fun ChannelScreen(
                                     }
                                 }
 
-                                if (viewModel.channel?.voice != null &&
-                                    channelPermissions has PermissionBit.Connect &&
-                                    Experiments.useVoiceChats2p0.isEnabled
+                                val isDmLikeWithOngoingCall =
+                                    (viewModel.channel?.channelType == ChannelType.DirectMessage ||
+                                            viewModel.channel?.channelType == ChannelType.Group) &&
+                                            StoatAPI.voiceStateCache[channelId]
+                                                ?.participants
+                                                ?.isNotEmpty() == true
+                                if ((viewModel.channel?.channelType == ChannelType.VoiceChannel ||
+                                            viewModel.channel?.voice != null ||
+                                            isDmLikeWithOngoingCall) &&
+                                    channelPermissions has PermissionBit.Connect
                                 ) {
                                     JoinVoiceChannelButton(channelId)
                                 }
@@ -1089,6 +1356,8 @@ fun ChannelScreen(
                                             channelId = channelId,
                                             failedValidation = viewModel.draftContent.length > 2000,
                                             valueIsBlank = viewModel.draftContent.isBlank(),
+                                            sendEnabled =
+                                                viewModel.editingMessage != null || !slowmodeActive,
                                             cancelEdit = {
                                                 viewModel.editingMessage = null
                                                 viewModel.putDraftContent("", true)

@@ -7,7 +7,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,12 +22,16 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -61,6 +64,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
@@ -87,19 +91,18 @@ import chat.stoat.api.internals.UserQR
 import chat.stoat.api.internals.UserQRContents
 import chat.stoat.api.routes.user.friendUser
 import chat.stoat.api.routes.user.unfriendUser
-import chat.stoat.core.model.schemas.AutumnResource
-import chat.stoat.core.model.schemas.Metadata
 import chat.stoat.api.settings.LoadedSettings
 import chat.stoat.callbacks.Action
 import chat.stoat.callbacks.ActionChannel
-import chat.stoat.components.vectorassets.HL_TAG
-import chat.stoat.components.vectorassets.HL_USERNAME
-import chat.stoat.components.vectorassets.RevoltTagIntro
 import chat.stoat.composables.chat.MemberListItem
 import chat.stoat.composables.generic.CountableListHeader
 import chat.stoat.composables.generic.UserAvatar
+import chat.stoat.composables.vectorassets.HL_TAG
+import chat.stoat.composables.vectorassets.HL_USERNAME
+import chat.stoat.composables.vectorassets.Nametag
+import chat.stoat.core.model.schemas.AutumnResource
+import chat.stoat.core.model.schemas.Metadata
 import chat.stoat.internals.extensions.zero
-import chat.stoat.markdown.jbm.asHexString
 import chat.stoat.screens.chat.LocalIsConnected
 import io.github.g00fy2.quickie.QRResult
 import io.github.g00fy2.quickie.ScanQRCode
@@ -153,14 +156,17 @@ fun FriendsScreen(topNav: NavController, useDrawer: Boolean, onDrawerClicked: ()
         ) {
             Column(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
-                modifier = Modifier.padding(16.dp),
+                modifier = Modifier
+                    .padding(16.dp)
+                    .verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Image(
-                    imageVector = RevoltTagIntro,
+                    imageVector = Nametag,
                     contentDescription = null,
                     modifier = Modifier
-                        .fillMaxWidth(0.5f)
+                        .width(200.dp)
+                        .padding(vertical = 24.dp)
                 )
                 Text(
                     text = stringResource(R.string.friends_add_by_tag),
@@ -172,8 +178,24 @@ fun FriendsScreen(topNav: NavController, useDrawer: Boolean, onDrawerClicked: ()
                     text = AnnotatedString.fromHtml(
                         stringResource(
                             R.string.friends_add_by_tag_sheet_description,
-                            "<font color=\"${Color(HL_USERNAME).asHexString(false)}\">",
-                            "<font color=\"${Color(HL_TAG).asHexString(false)}\">",
+                            "<font color=\"${
+                                Color(HL_USERNAME).toArgb().let {
+                                    "#%02x%02x%02x".format(
+                                        it shr 16 and 0xff,
+                                        it shr 8 and 0xff,
+                                        it and 0xff
+                                    )
+                                }
+                            }\">",
+                            "<font color=\"${
+                                Color(HL_TAG).toArgb().let {
+                                    "#%02x%02x%02x".format(
+                                        it shr 16 and 0xff,
+                                        it shr 8 and 0xff,
+                                        it and 0xff
+                                    )
+                                }
+                            }\">",
                             "</font>",
                         )
                     ),
@@ -375,7 +397,9 @@ fun FriendsScreen(topNav: NavController, useDrawer: Boolean, onDrawerClicked: ()
                             text = stringResource(R.string.friends_scan_qr_result_sheet_success_title),
                             style = MaterialTheme.typography.titleMedium,
                             textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 16.dp, bottom = 12.dp)
                         )
 
                         UserAvatar(
@@ -419,27 +443,60 @@ fun FriendsScreen(topNav: NavController, useDrawer: Boolean, onDrawerClicked: ()
                             modifier = Modifier.fillMaxWidth()
                         )
 
-                        Button(
-                            onClick = {
-                                scope.launch {
-                                    contents?.let { userContents ->
-                                        try {
-                                            friendUser("${userContents.username}#${userContents.discriminator}")
-                                            qrResult = null
-                                            contents = null
-                                        } catch (e: Exception) {
-                                            Toast.makeText(
-                                                context,
-                                                e.localizedMessage ?: e.toString(),
-                                                Toast.LENGTH_SHORT
-                                            ).show()
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(
+                                8.dp,
+                                Alignment.CenterHorizontally
+                            ),
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 16.dp)
+                        ) {
+                            Button(
+                                onClick = {
+                                    scope.launch {
+                                        contents?.let { userContents ->
+                                            try {
+                                                friendUser("${userContents.username}#${userContents.discriminator}")
+                                                qrResult = null
+                                                contents = null
+                                            } catch (e: Exception) {
+                                                Toast.makeText(
+                                                    context,
+                                                    e.localizedMessage ?: e.toString(),
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
                                         }
                                     }
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(stringResource(R.string.friends_add_by_tag_sheet_add))
+                                },
+                                shapes = ButtonDefaults.shapes(
+                                    shape = CircleShape,
+                                    pressedShape = MaterialTheme.shapes.medium
+                                ),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text(stringResource(R.string.friends_add_by_tag_sheet_add))
+                            }
+
+                            Button(
+                                onClick = {
+                                    qrResult = null
+                                    contents = null
+                                },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.error,
+                                    contentColor = MaterialTheme.colorScheme.onError
+                                ),
+                                shapes = ButtonDefaults.shapes(
+                                    shape = CircleShape,
+                                    pressedShape = MaterialTheme.shapes.medium
+                                ),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text(stringResource(R.string.friends_add_by_tag_sheet_do_not_add))
+                            }
                         }
                     }
 
@@ -559,19 +616,28 @@ fun FriendsScreen(topNav: NavController, useDrawer: Boolean, onDrawerClicked: ()
                     val item = FriendRequests.getIncoming().getOrNull(it)
                     if (item == null) return@items
 
+                    val isLast = it == FriendRequests.getIncoming().size - 1
+
                     MemberListItem(
                         member = null,
                         user = item,
                         serverId = null,
                         userId = item.id ?: "",
-                        modifier = Modifier.clickable {
+                        first = it == 0,
+                        last = isLast,
+                        onClick = {
                             scope.launch {
                                 item.id?.let { userId ->
                                     ActionChannel.send(Action.OpenUserSheet(userId, null))
                                 }
                             }
-                        }
+                        },
+                        modifier = Modifier.padding(horizontal = 16.dp)
                     )
+
+                    if (!isLast) {
+                        Spacer(modifier = Modifier.height(2.dp))
+                    }
                 }
 
                 stickyHeader(key = "outgoing") {
@@ -585,19 +651,28 @@ fun FriendsScreen(topNav: NavController, useDrawer: Boolean, onDrawerClicked: ()
                     val item = FriendRequests.getOutgoing().getOrNull(it)
                     if (item == null) return@items
 
+                    val isLast = it == FriendRequests.getOutgoing().size - 1
+
                     MemberListItem(
                         member = null,
                         user = item,
                         serverId = null,
                         userId = item.id ?: "",
-                        modifier = Modifier.clickable {
+                        first = it == 0,
+                        last = isLast,
+                        onClick = {
                             scope.launch {
                                 item.id?.let { userId ->
                                     ActionChannel.send(Action.OpenUserSheet(userId, null))
                                 }
                             }
-                        }
+                        },
+                        modifier = Modifier.padding(horizontal = 16.dp)
                     )
+
+                    if (!isLast) {
+                        Spacer(modifier = Modifier.height(2.dp))
+                    }
                 }
 
                 stickyHeader(key = "online") {
@@ -611,19 +686,28 @@ fun FriendsScreen(topNav: NavController, useDrawer: Boolean, onDrawerClicked: ()
                     val item = FriendRequests.getOnlineFriends().getOrNull(it)
                     if (item == null) return@items
 
+                    val isLast = it == FriendRequests.getOnlineFriends().size - 1
+
                     MemberListItem(
                         member = null,
                         user = item,
                         serverId = null,
                         userId = item.id ?: "",
-                        modifier = Modifier.clickable {
+                        first = it == 0,
+                        last = isLast,
+                        onClick = {
                             scope.launch {
                                 item.id?.let { userId ->
                                     ActionChannel.send(Action.OpenUserSheet(userId, null))
                                 }
                             }
-                        }
+                        },
+                        modifier = Modifier.padding(horizontal = 16.dp)
                     )
+
+                    if (!isLast) {
+                        Spacer(modifier = Modifier.height(2.dp))
+                    }
                 }
 
                 stickyHeader(key = "not_online") {
@@ -637,19 +721,28 @@ fun FriendsScreen(topNav: NavController, useDrawer: Boolean, onDrawerClicked: ()
                     val item = FriendRequests.getFriends(true).getOrNull(it)
                     if (item == null) return@items
 
+                    val isLast = it == FriendRequests.getFriends(true).size - 1
+
                     MemberListItem(
                         member = null,
                         user = item,
                         serverId = null,
                         userId = item.id ?: "",
-                        modifier = Modifier.clickable {
+                        first = it == 0,
+                        last = isLast,
+                        onClick = {
                             scope.launch {
                                 item.id?.let { userId ->
                                     ActionChannel.send(Action.OpenUserSheet(userId, null))
                                 }
                             }
-                        }
+                        },
+                        modifier = Modifier.padding(horizontal = 16.dp)
                     )
+
+                    if (!isLast) {
+                        Spacer(modifier = Modifier.height(2.dp))
+                    }
                 }
 
                 stickyHeader(key = "blocked") {
@@ -664,19 +757,28 @@ fun FriendsScreen(topNav: NavController, useDrawer: Boolean, onDrawerClicked: ()
                     val item = FriendRequests.getBlocked().getOrNull(it)
                     if (item == null) return@items
 
+                    val isLast = it == FriendRequests.getBlocked().size - 1
+
                     MemberListItem(
                         member = null,
                         user = item,
                         serverId = null,
                         userId = item.id ?: "",
-                        modifier = Modifier.clickable {
+                        first = it == 0,
+                        last = isLast,
+                        onClick = {
                             scope.launch {
                                 item.id?.let { userId ->
                                     ActionChannel.send(Action.OpenUserSheet(userId, null))
                                 }
                             }
-                        }
+                        },
+                        modifier = Modifier.padding(horizontal = 16.dp)
                     )
+
+                    if (!isLast) {
+                        Spacer(modifier = Modifier.height(2.dp))
+                    }
                 }
             }
 

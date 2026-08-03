@@ -43,27 +43,24 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.navigation.NavController
 import chat.stoat.R
 import chat.stoat.StoatApplication
-import chat.stoat.api.STOAT_WEB_APP
 import chat.stoat.api.StoatAPI
 import chat.stoat.api.routes.account.EmailPasswordAssessment
 import chat.stoat.api.routes.account.negotiateAuthentication
 import chat.stoat.api.routes.onboard.needsOnboarding
 import chat.stoat.composables.generic.FormTextField
 import chat.stoat.composables.generic.Weblink
+import chat.stoat.core.model.data.STOAT_WEB_APP
 import chat.stoat.persistence.KVStorage
 import chat.stoat.ui.theme.FragmentMono
-import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.launch
-import javax.inject.Inject
+import org.koin.androidx.compose.koinViewModel
 
-@HiltViewModel
-class LoginViewModel @Inject constructor(
+class LoginViewModel(
     private val kvStorage: KVStorage
 ) : ViewModel() {
     private var _email by mutableStateOf("")
@@ -151,7 +148,7 @@ class LoginViewModel @Inject constructor(
 }
 
 @Composable
-fun LoginScreen(navController: NavController, viewModel: LoginViewModel = hiltViewModel()) {
+fun LoginScreen(navController: NavController, viewModel: LoginViewModel = koinViewModel()) {
     val passwordTextFieldState = rememberTextFieldState()
     LaunchedEffect(passwordTextFieldState.text) {
         viewModel.setPassword(passwordTextFieldState.text.toString())

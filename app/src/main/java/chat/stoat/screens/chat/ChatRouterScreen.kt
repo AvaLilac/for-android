@@ -60,25 +60,32 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.core.app.NotificationManagerCompat
-import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.viewModelScope
 import androidx.navigation.NavController
+import androidx.navigation.compose.currentBackStackEntryAsState
 import chat.stoat.BuildConfig
 import chat.stoat.R
 import chat.stoat.api.StoatAPI
 import chat.stoat.api.internals.DirectMessages
 import chat.stoat.api.realtime.DisconnectionState
 import chat.stoat.api.realtime.RealtimeSocket
+import chat.stoat.api.routes.microservices.gazette.getLatestChangelog
 import chat.stoat.api.routes.push.subscribePush
+import chat.stoat.api.routes.user.fetchSelf
+import chat.stoat.core.model.data.STOAT_FILES
+import chat.stoat.core.model.schemas.User
+import chat.stoat.api.settings.SyncedSettings
 import chat.stoat.callbacks.Action
 import chat.stoat.callbacks.ActionChannel
 import chat.stoat.composables.chat.DisconnectedNotice
 import chat.stoat.composables.screens.chat.drawer.ChannelSideDrawer
+import chat.stoat.core.model.schemas.ReleaseNotesSettings
 import chat.stoat.dialogs.NotificationRationaleDialog
-import chat.stoat.internals.Changelogs
+import chat.stoat.c2dm.NotificationDeepLink
+import chat.stoat.internals.StoatWebLink
 import chat.stoat.internals.extensions.zero
 import chat.stoat.persistence.KVStorage
 import chat.stoat.screens.chat.dialogs.safety.ReportMessageDialog
@@ -89,7 +96,6 @@ import chat.stoat.screens.chat.views.NoCurrentChannelScreen
 import chat.stoat.screens.chat.views.OverviewScreen
 import chat.stoat.screens.chat.views.channel.ChannelScreen
 import chat.stoat.sheets.AddServerSheet
-import chat.stoat.sheets.ChangelogSheet
 import chat.stoat.sheets.EarlyAccessSheet
 import chat.stoat.sheets.EmoteInfoSheet
 import chat.stoat.sheets.LinkInfoSheet
@@ -101,12 +107,14 @@ import chat.stoat.sheets.WebHookUserSheet
 import chat.stoat.sheets.spark.SwipeToReplySparkSheet
 import com.google.android.gms.tasks.OnCompleteListener
 import com.google.firebase.messaging.FirebaseMessaging
-import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
 import io.sentry.Sentry
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
-import javax.inject.Inject
+import kotlinx.datetime.Clock
+import kotlinx.datetime.Instant
+import logcat.LogPriority
+import logcat.logcat
+import org.koin.androidx.compose.koinViewModel
 
 sealed class ChatRouterDestination {
     data object Overview : ChatRouterDestination()
@@ -145,37 +153,34 @@ sealed class ChatRouterDestination {
     }
 }
 
-@HiltViewModel
 @SuppressLint("StaticFieldLeak")
-class ChatRouterViewModel @Inject constructor(
+class ChatRouterViewModel(
     private val kvStorage: KVStorage,
-    @ApplicationContext val context: Context
+    val context: Context,
 ) : ViewModel() {
     var currentDestination by mutableStateOf<ChatRouterDestination>(ChatRouterDestination.default)
-    var latestChangelogRead by mutableStateOf(true)
-    var latestChangelog by mutableStateOf("")
-    var latestChangelogBody by mutableStateOf("")
     var showNotificationRationale by mutableStateOf(false)
     var showEarlyAccessSpark by mutableStateOf(false)
     var showSwipeToReplySpark by mutableStateOf(false)
-
-    private val changelogs = Changelogs(context, kvStorage)
+    var showChangelogScreenForId by mutableStateOf<String?>(null)
+    var pendingMessageJump by mutableStateOf<ChannelMessageJump?>(null)
+        private set
+    private var changelogCheckDone = false
 
     init {
         viewModelScope.launch {
-            val current = kvStorage.get("currentDestination")
-            setSaveDestination(ChatRouterDestination.fromString(current ?: ""))
+            runCatching { fetchSelf() }.getOrNull()?.let { user ->
+                kvStorage.set("selfId", user.id ?: "")
+                kvStorage.set("selfName", User.resolveDefaultName(user))
+                kvStorage.set("selfAvatarUrl", user.avatar?.id?.let { "$STOAT_FILES/avatars/$it" } ?: "")
+            }
 
-            try {
-                latestChangelogRead = changelogs.hasSeenCurrent()
-                latestChangelog = changelogs.getLatestChangelogCode()
-                latestChangelogBody =
-                    changelogs.fetchChangelogByVersionCode(latestChangelog.toLong()).rendered
-                if (!latestChangelogRead) {
-                    changelogs.markAsSeen()
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
+            val pendingNavigation = NotificationDeepLink.pendingNavigation.value
+            if (pendingNavigation != null) {
+                consumePendingNavigation(pendingNavigation)
+            } else {
+                val current = kvStorage.get("currentDestination")
+                setSaveDestination(ChatRouterDestination.fromString(current ?: ""))
             }
 
             val seenEarlyAccess = kvStorage.getBoolean("spark/earlyAccess/dismissed")
@@ -193,11 +198,39 @@ class ChatRouterViewModel @Inject constructor(
 
             val hasNotificationPermission =
                 NotificationManagerCompat.from(context).areNotificationsEnabled()
-            // right now we only show this in debug builds so Chucker can show its notification
-            if (!hasNotificationPermission && BuildConfig.DEBUG) {
+            val rejectedPush = kvStorage.getBoolean("pushNotificationsRejected") == true
+            if (!hasNotificationPermission && !rejectedPush) {
                 showNotificationRationale = true
             }
+
+            NotificationDeepLink.pendingNavigation.collect { navigation ->
+                if (navigation != null) consumePendingNavigation(navigation)
+            }
         }
+    }
+
+    private fun consumePendingNavigation(navigation: StoatWebLink) {
+        if (NotificationDeepLink.pendingNavigation.value == navigation) {
+            NotificationDeepLink.pendingNavigation.value = null
+        }
+
+        when (navigation) {
+            is StoatWebLink.Server -> navigateToServer(navigation.serverId)
+            is StoatWebLink.Channel ->
+                setSaveDestination(ChatRouterDestination.Channel(navigation.channelId))
+
+            is StoatWebLink.Message ->
+                requestMessageJump(navigation.channelId, navigation.messageId)
+        }
+    }
+
+    fun requestMessageJump(channelId: String, messageId: String) {
+        pendingMessageJump = ChannelMessageJump(channelId, messageId)
+        setSaveDestination(ChatRouterDestination.Channel(channelId))
+    }
+
+    fun consumeMessageJump(request: ChannelMessageJump) {
+        if (pendingMessageJump == request) pendingMessageJump = null
     }
 
     fun setSaveDestination(destination: ChatRouterDestination) {
@@ -269,6 +302,41 @@ class ChatRouterViewModel @Inject constructor(
             }
         }
     }
+
+    fun maybeShowChangelog() {
+        if (changelogCheckDone) return
+        changelogCheckDone = true
+
+        viewModelScope.launch {
+            val latestChangelog = runCatching { getLatestChangelog() }
+                .onFailure {
+                    logcat(LogPriority.ERROR) { "Failed to fetch latest changelog: ${it.message}" }
+                }
+                .getOrNull()
+
+            if (latestChangelog != null) {
+                val isInFuture =
+                    runCatching { Instant.parse(latestChangelog.publishedAt) > Clock.System.now() }.getOrNull()
+                        ?: false
+                if (isInFuture) {
+                    logcat(LogPriority.WARN) { "Latest changelog is from the future (${latestChangelog.publishedAt} > ${Clock.System.now()}), not showing it!" }
+                    return@launch
+                }
+
+                SyncedSettings.awaitFetched()
+                val lastSeenChangelog = SyncedSettings.releaseNotes.lastSeenId
+                if (lastSeenChangelog == null || lastSeenChangelog != latestChangelog.id) {
+                    showChangelogScreenForId = latestChangelog.id
+                    SyncedSettings.updateReleaseNotes(
+                        ReleaseNotesSettings(
+                            lastSeenId = latestChangelog.id,
+                            lastSeenAt = Clock.System.now().toString()
+                        )
+                    )
+                }
+            }
+        }
+    }
 }
 
 val LocalIsConnected = compositionLocalOf(structuralEqualityPolicy()) { false }
@@ -281,7 +349,7 @@ fun ChatRouterScreen(
     disableBackHandler: Boolean,
     onNullifiedUser: () -> Unit,
     onEnterVoiceUI: (String) -> Unit,
-    viewModel: ChatRouterViewModel = hiltViewModel()
+    viewModel: ChatRouterViewModel = koinViewModel()
 ) {
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -382,6 +450,21 @@ fun ChatRouterScreen(
             }
     }
 
+    LaunchedEffect(Unit) {
+        viewModel.maybeShowChangelog()
+    }
+
+    LaunchedEffect(Unit) {
+        snapshotFlow { viewModel.showChangelogScreenForId }
+            .distinctUntilChanged()
+            .collect { changelogId ->
+                if (changelogId != null) {
+                    viewModel.showChangelogScreenForId = null
+                    topNav.navigate("changelog/${changelogId}")
+                }
+            }
+    }
+
     LaunchedEffect(DirectMessages.unreadDMs()) {
         snapshotFlow { DirectMessages.unreadDMs() }
             .distinctUntilChanged()
@@ -411,6 +494,10 @@ fun ChatRouterScreen(
                         showUserContextSheet = true
                     }
 
+                    is Action.SwitchServer -> {
+                        viewModel.navigateToServer(action.serverId)
+                    }
+
                     is Action.SwitchChannel -> {
                         val resolvedChannel = StoatAPI.channelCache[action.channelId]
 
@@ -420,6 +507,20 @@ fun ChatRouterScreen(
                         }
 
                         viewModel.setSaveDestination(ChatRouterDestination.Channel(action.channelId))
+                    }
+
+                    is Action.JumpToMessage -> {
+                        val resolvedChannel = StoatAPI.channelCache[action.channelId]
+
+                        if (resolvedChannel == null) {
+                            showChannelUnavailableAlert = true
+                            return@let
+                        }
+
+                        viewModel.requestMessageJump(
+                            channelId = action.channelId,
+                            messageId = action.messageId,
+                        )
                     }
 
                     is Action.LinkInfo -> {
@@ -477,17 +578,6 @@ fun ChatRouterScreen(
         accessibilityManager.addTouchExplorationStateChangeListener { enabled ->
             isTouchExplorationEnabled = enabled
         }
-    }
-
-    if (!viewModel.latestChangelogRead) {
-        ChangelogSheet(
-            versionName = viewModel.latestChangelog,
-            versionIsHistorical = false,
-            renderedContents = viewModel.latestChangelogBody,
-            onDismiss = {
-                viewModel.latestChangelogRead = true
-            }
-        )
     }
 
     if (showPlatformModDMHint) {
@@ -729,13 +819,13 @@ fun ChatRouterScreen(
             if (isGranted) {
                 viewModel.setRegisterForNotifications()
             } else {
-                viewModel.showNotificationRationale = false
+                viewModel.markNotificationsRejected()
             }
         }
     if (viewModel.showNotificationRationale) {
         NotificationRationaleDialog(
             onDismiss = {
-                viewModel.showNotificationRationale = false
+                viewModel.markNotificationsRejected()
             },
             onSelected = { accepted ->
                 if (accepted) {
@@ -850,6 +940,8 @@ fun ChatRouterScreen(
                     ChannelNavigator(
                         dest = viewModel.currentDestination,
                         topNav = topNav,
+                        messageJump = viewModel.pendingMessageJump,
+                        onMessageJumpConsumed = viewModel::consumeMessageJump,
                         useDrawer = false,
                         disableBackHandler = disableBackHandler,
                         toggleDrawer = {
@@ -898,6 +990,8 @@ fun ChatRouterScreen(
                             ChannelNavigator(
                                 dest = viewModel.currentDestination,
                                 topNav = topNav,
+                                messageJump = viewModel.pendingMessageJump,
+                                onMessageJumpConsumed = viewModel::consumeMessageJump,
                                 useDrawer = true,
                                 disableBackHandler = disableBackHandler,
                                 toggleDrawer = {
@@ -978,6 +1072,8 @@ fun Sidebar(
 fun ChannelNavigator(
     dest: ChatRouterDestination,
     topNav: NavController,
+    messageJump: ChannelMessageJump? = null,
+    onMessageJumpConsumed: (ChannelMessageJump) -> Unit = {},
     useDrawer: Boolean,
     toggleDrawer: () -> Unit,
     drawerState: DrawerState? = null,
@@ -987,6 +1083,7 @@ fun ChannelNavigator(
     setDrawerGestureEnabled: (Boolean) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
+    val currentTopEntry by topNav.currentBackStackEntryAsState()
 
     BackHandler(useDrawer && !disableBackHandler) {
         toggleDrawer()
@@ -1011,6 +1108,20 @@ fun ChannelNavigator(
             }
 
             is ChatRouterDestination.Channel -> {
+                val routedMessageJump = messageJump?.takeIf {
+                    it.channelId == dest.channelId
+                }
+                val requestedChannelId =
+                    currentTopEntry?.savedStateHandle?.get<String>(
+                        CHANNEL_MESSAGE_JUMP_CHANNEL_KEY
+                    )
+                val requestedMessageId =
+                    currentTopEntry?.savedStateHandle?.get<String>(
+                        CHANNEL_MESSAGE_JUMP_MESSAGE_KEY
+                    )?.takeIf { requestedChannelId == dest.channelId }
+                val effectiveRequestedMessageId =
+                    routedMessageJump?.messageId ?: requestedMessageId
+
                 ChannelScreen(
                     channelId = dest.channelId,
                     onToggleDrawer = {
@@ -1026,6 +1137,16 @@ fun ChannelNavigator(
                     drawerGestureEnabled = drawerGestureEnabled,
                     setDrawerGestureEnabled = setDrawerGestureEnabled,
                     drawerIsOpen = drawerState?.isOpen == true,
+                    requestedMessageId = effectiveRequestedMessageId,
+                    onRequestedMessageConsumed = {
+                        routedMessageJump?.let(onMessageJumpConsumed)
+                        currentTopEntry?.savedStateHandle?.remove<String>(
+                            CHANNEL_MESSAGE_JUMP_CHANNEL_KEY
+                        )
+                        currentTopEntry?.savedStateHandle?.remove<String>(
+                            CHANNEL_MESSAGE_JUMP_MESSAGE_KEY
+                        )
+                    },
                 )
             }
 

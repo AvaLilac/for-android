@@ -1,7 +1,7 @@
 package chat.stoat.activities
 
-import android.annotation.SuppressLint
 import android.content.Context
+import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Bundle
@@ -15,7 +15,6 @@ import android.view.ViewTreeObserver
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
-import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.AnimatedVisibility
@@ -50,10 +49,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -65,6 +61,7 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.ViewModel
@@ -74,7 +71,6 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import chat.stoat.BuildConfig
 import chat.stoat.R
-import chat.stoat.StoatApplication
 import chat.stoat.api.HitRateLimitException
 import chat.stoat.api.StoatAPI
 import chat.stoat.api.StoatHttp
@@ -86,16 +82,23 @@ import chat.stoat.api.settings.Experiments
 import chat.stoat.api.settings.GeoStateProvider
 import chat.stoat.api.settings.LoadedSettings
 import chat.stoat.api.settings.SyncedSettings
+import chat.stoat.c2dm.NotificationDeepLink
 import chat.stoat.composables.generic.HealthAlert
 import chat.stoat.composables.voice.VoicePermissionSwitch
+import chat.stoat.composables.voice.VoiceSheet
 import chat.stoat.core.model.schemas.HealthNotice
+import chat.stoat.internals.StoatWebLink
+import chat.stoat.internals.toStoatWebLinkOrNull
 import chat.stoat.material.EasingTokens
-import chat.stoat.ndk.NativeLibraries
 import chat.stoat.persistence.KVStorage
 import chat.stoat.screens.DefaultDestinationScreen
 import chat.stoat.screens.about.AboutScreen
 import chat.stoat.screens.about.AttributionScreen
+import chat.stoat.screens.changelogs.ReadChangelogScreen
+import chat.stoat.screens.chat.CHANNEL_MESSAGE_JUMP_CHANNEL_KEY
+import chat.stoat.screens.chat.CHANNEL_MESSAGE_JUMP_MESSAGE_KEY
 import chat.stoat.screens.chat.ChannelPinsScreen
+import chat.stoat.screens.chat.ChannelSearchScreen
 import chat.stoat.screens.chat.ChatRouterScreen
 import chat.stoat.screens.chat.standalone.CatchUpScreen
 import chat.stoat.screens.chat.views.channel.ChannelScreen
@@ -111,12 +114,14 @@ import chat.stoat.screens.register.RegisterDetailsScreen
 import chat.stoat.screens.register.RegisterGreetingScreen
 import chat.stoat.screens.register.RegisterVerifyScreen
 import chat.stoat.screens.services.DiscoverScreen
+import chat.stoat.screens.settings.AccountSettingsScreen
 import chat.stoat.screens.settings.AppearanceSettingsScreen
-import chat.stoat.screens.settings.ChangelogsSettingsScreen
 import chat.stoat.screens.settings.ChatSettingsScreen
 import chat.stoat.screens.settings.DebugSettingsScreen
 import chat.stoat.screens.settings.ExperimentsSettingsScreen
 import chat.stoat.screens.settings.LanguagePickerSettingsScreen
+import chat.stoat.screens.settings.MfaSettingsScreen
+import chat.stoat.screens.settings.NotificationsSettingsScreen
 import chat.stoat.screens.settings.ProfileSettingsScreen
 import chat.stoat.screens.settings.SessionSettingsScreen
 import chat.stoat.screens.settings.SettingsScreen
@@ -124,21 +129,16 @@ import chat.stoat.screens.settings.channel.ChannelSettingsHome
 import chat.stoat.screens.settings.channel.ChannelSettingsOverview
 import chat.stoat.screens.settings.channel.ChannelSettingsPermissions
 import chat.stoat.ui.theme.StoatTheme
-import com.google.android.material.color.DynamicColors
-import dagger.hilt.android.AndroidEntryPoint
-import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
+import chat.stoat.voice.VoiceCallManager
 import io.ktor.client.request.get
 import io.sentry.android.core.SentryAndroid
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
-import javax.inject.Inject
+import org.koin.androidx.viewmodel.ext.android.viewModel
 
-@HiltViewModel
-@SuppressLint("StaticFieldLeak")
-class MainActivityViewModel @Inject constructor(
+class MainActivityViewModel(
     private val kvStorage: KVStorage,
-    @ApplicationContext private val context: Context
+    private val context: Context
 ) : ViewModel() {
     val nextDestination = MutableStateFlow<String?>(null)
     var isConnected = MutableStateFlow(false)
@@ -275,6 +275,9 @@ class MainActivityViewModel @Inject constructor(
         viewModelScope.launch {
             kvStorage.remove("sessionToken")
             kvStorage.remove("sessionId")
+            kvStorage.remove("selfId")
+            kvStorage.remove("selfName")
+            kvStorage.remove("selfAvatarUrl")
             startWithDestination("login/greeting")
         }
     }
@@ -323,27 +326,44 @@ class MainActivityViewModel @Inject constructor(
     }
 }
 
-@AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
-    private val viewModel by viewModels<MainActivityViewModel>()
+    private val viewModel: MainActivityViewModel by viewModel()
 
-    // Fix for SDK >=31, where core-splashscreen accidentally removes dynamic colours
+    // The window can lose its transparent status bar after the activity is re-shown
     // See the other one in DefaultDestinationScreen.kt
     override fun onResume() {
         super.onResume()
-        DynamicColors.applyToActivityIfAvailable(this)
-        DynamicColors.applyToActivitiesIfAvailable(StoatApplication.instance)
-        @Suppress("DEPRECATION") // We are fixing a bug in the splash screen
+        @Suppress("DEPRECATION") // no Compose-side equivalent for this window flag
         window.statusBarColor = Color.Transparent.toArgb()
     }
 
     // Same as above for configuration changes (rotation, dark mode, etc.)
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
-        DynamicColors.applyToActivityIfAvailable(this)
-        DynamicColors.applyToActivitiesIfAvailable(StoatApplication.instance)
-        @Suppress("DEPRECATION") // We are fixing a bug in the splash screen
+        @Suppress("DEPRECATION") // no Compose-side equivalent for this window flag
         window.statusBarColor = Color.Transparent.toArgb()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleNavigationIntent(intent)
+    }
+
+    private fun handleNavigationIntent(intent: Intent) {
+        val webLink = intent.data?.toStoatWebLinkOrNull()
+        if (webLink != null) {
+            NotificationDeepLink.pendingNavigation.value = webLink
+            return
+        }
+
+        val channelId = intent.getStringExtra("channelId") ?: return
+        val messageId = intent.getStringExtra("messageId")
+        NotificationDeepLink.pendingNavigation.value = if (messageId != null) {
+            StoatWebLink.Message(channelId, messageId)
+        } else {
+            StoatWebLink.Channel(channelId)
+        }
     }
 
     @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
@@ -360,6 +380,8 @@ class MainActivity : AppCompatActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
         StoatAPI.hydrateFromPersistentCache()
+
+        handleNavigationIntent(intent)
 
         setContent {
             val windowSizeClass = calculateWindowSizeClass(this)
@@ -420,14 +442,10 @@ class MainActivity : AppCompatActivity() {
         data?.add(messaging)
     }
 
-    companion object {
-        init {
-            NativeLibraries.init()
-        }
-    }
 }
 
 val StoatTweenInt: FiniteAnimationSpec<IntOffset> = tween(400, easing = EaseInOutExpo)
+val StoatTweenSize: FiniteAnimationSpec<IntSize> = tween(400, easing = EaseInOutExpo)
 val StoatTweenFloat: FiniteAnimationSpec<Float> = tween(400, easing = EaseInOutExpo)
 val StoatTweenDp: FiniteAnimationSpec<Dp> = tween(400, easing = EaseInOutExpo)
 val StoatTweenColour: FiniteAnimationSpec<Color> = tween(400, easing = EaseInOutExpo)
@@ -451,8 +469,9 @@ fun AppEntrypoint(
     onRetryConnection: () -> Unit,
     onUpdateNextDestination: (String) -> Unit = {}
 ) {
-    var showVoiceUI by rememberSaveable { mutableStateOf(false) }
-    var voiceChannelId by rememberSaveable { mutableStateOf<String?>(null) }
+    val showVoiceUI = VoiceCallManager.isSheetVisible
+    val hideVoiceUI = { VoiceCallManager.isSheetVisible = false }
+    val disconnectVoice = { VoiceCallManager.leave() }
 
     val chatUIScale by animateFloatAsState(
         if (showVoiceUI) 0.8f else 1.0f,
@@ -470,7 +489,7 @@ fun AppEntrypoint(
     )
 
     BackHandler(showVoiceUI) {
-        showVoiceUI = false
+        hideVoiceUI()
     }
 
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -639,8 +658,7 @@ fun AppEntrypoint(
                                 navController.navigate("default")
                             },
                             onEnterVoiceUI = { channelId ->
-                                showVoiceUI = true
-                                voiceChannelId = channelId
+                                VoiceCallManager.openSheet(channelId)
                             },
                         )
                     }
@@ -693,6 +711,14 @@ fun AppEntrypoint(
                         }
                     ) { backStackEntry ->
                         val channelId = backStackEntry.arguments?.getString("channelId") ?: ""
+                        val requestedMessageId =
+                            backStackEntry.savedStateHandle.get<String>(
+                                CHANNEL_MESSAGE_JUMP_MESSAGE_KEY
+                            )?.takeIf {
+                                backStackEntry.savedStateHandle.get<String>(
+                                    CHANNEL_MESSAGE_JUMP_CHANNEL_KEY
+                                ) == channelId
+                            }
                         ChannelScreen(
                             channelId = channelId,
                             onToggleDrawer = {},
@@ -701,7 +727,16 @@ fun AppEntrypoint(
                             backButtonAction = {
                                 navController.popBackStack()
                             },
-                            useChatUI = true
+                            useChatUI = true,
+                            requestedMessageId = requestedMessageId,
+                            onRequestedMessageConsumed = {
+                                backStackEntry.savedStateHandle.remove<String>(
+                                    CHANNEL_MESSAGE_JUMP_CHANNEL_KEY
+                                )
+                                backStackEntry.savedStateHandle.remove<String>(
+                                    CHANNEL_MESSAGE_JUMP_MESSAGE_KEY
+                                )
+                            },
                         )
                     }
 
@@ -712,13 +747,15 @@ fun AppEntrypoint(
                     composable("discover") { DiscoverScreen(navController) }
 
                     composable("settings") { SettingsScreen(navController) }
+                    composable("settings/account") { AccountSettingsScreen(navController) }
+                    composable("settings/account/mfa") { MfaSettingsScreen(navController) }
                     composable("settings/profile") { ProfileSettingsScreen(navController) }
                     composable("settings/sessions") { SessionSettingsScreen(navController) }
                     composable("settings/appearance") { AppearanceSettingsScreen(navController) }
                     composable("settings/chat") { ChatSettingsScreen(navController) }
+                    composable("settings/notifications") { NotificationsSettingsScreen(navController) }
                     composable("settings/debug") { DebugSettingsScreen(navController) }
                     composable("settings/experiments") { ExperimentsSettingsScreen(navController) }
-                    composable("settings/changelogs") { ChangelogsSettingsScreen(navController) }
                     composable("settings/language") { LanguagePickerSettingsScreen(navController) }
 
                     composable("settings/channel/{channelId}") { backStackEntry ->
@@ -739,10 +776,17 @@ fun AppEntrypoint(
                         ChannelPinsScreen(navController, channelId)
                     }
 
+                    composable("channel/{channelId}/search") { backStackEntry ->
+                        val channelId = backStackEntry.arguments?.getString("channelId") ?: ""
+                        ChannelSearchScreen(navController, channelId)
+                    }
+
                     composable("about") { AboutScreen(navController) }
                     composable("about/oss") { AttributionScreen(navController) }
 
                     composable("labs") { LabsRootScreen(navController) }
+
+                    composable("changelog/{id}") { ReadChangelogScreen(navController) }
                 }
             }
 
@@ -754,7 +798,7 @@ fun AppEntrypoint(
                             indication = null,
                             interactionSource = remember { MutableInteractionSource() }
                         ) {
-                            showVoiceUI = false
+                            hideVoiceUI()
                         }
                 )
             }
@@ -787,22 +831,15 @@ fun AppEntrypoint(
                             .padding(8.dp)
                     ) {
                         VoicePermissionSwitch(
-                            onCancel = {
-                                showVoiceUI = false
-                            }
+                            onCancel = disconnectVoice
                         ) {
-                            LaunchedEffect(Unit) {
-                                showVoiceUI = false
-                                voiceChannelId = null
-                            }
-                            voiceChannelId?.let {
-                                /*VoiceSheet(
-                                    it,
-                                    onDisconnect = {
-                                        showVoiceUI = false
-                                        voiceChannelId = null
-                                    }
-                                )*/
+                            VoiceCallManager.requestedChannelId?.let { channelId ->
+                                LaunchedEffect(channelId) {
+                                    VoiceCallManager.join(channelId)
+                                }
+                                VoiceSheet(
+                                    onDisconnect = disconnectVoice
+                                )
                             }
                         }
                     }

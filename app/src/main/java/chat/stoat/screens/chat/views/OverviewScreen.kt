@@ -1,7 +1,7 @@
 package chat.stoat.screens.chat.views
 
+import android.content.Intent
 import android.util.Log
-import android.widget.Toast
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
@@ -54,17 +54,20 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import androidx.navigation.NavController
 import chat.stoat.R
+import chat.stoat.activities.InviteActivity
 import chat.stoat.api.StoatAPI
 import chat.stoat.api.routes.user.fetchSelf
-import chat.stoat.core.model.schemas.User
 import chat.stoat.composables.generic.NonIdealState
 import chat.stoat.composables.screens.settings.UserOverview
 import chat.stoat.composables.skeletons.UserOverviewSkeleton
+import chat.stoat.core.model.schemas.User
 import chat.stoat.internals.extensions.zero
 import chat.stoat.screens.chat.LocalIsConnected
 import chat.stoat.sheets.UserCardSheet
@@ -79,6 +82,7 @@ fun OverviewScreen(
     includePadding: Boolean = true
 ) {
     val context = LocalContext.current
+    val resources = LocalResources.current
 
     var isLoading by rememberSaveable { mutableStateOf(true) }
     var user by rememberSaveable { mutableStateOf<User?>(null) }
@@ -329,7 +333,7 @@ fun OverviewScreen(
                         item(key = "changelog") {
                             OverviewScreenLink(
                                 onClick = {
-                                    navController.navigate("settings/changelogs")
+                                    navController.navigate("changelog/latest")
                                 },
                                 backgroundColour = MaterialTheme.colorScheme.errorContainer,
                                 foregroundColour = MaterialTheme.colorScheme.onErrorContainer,
@@ -339,7 +343,7 @@ fun OverviewScreen(
                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
                                         Icon(
-                                            painter = painterResource(R.drawable.ic_wand_shine_24dp),
+                                            painter = painterResource(R.drawable.ic_campaign_24dp),
                                             contentDescription = null,
                                             modifier = Modifier.size(22.dp)
                                         )
@@ -349,15 +353,17 @@ fun OverviewScreen(
                                 body = { Text(stringResource(R.string.overview_screen_changelog_description)) }
                             )
                         }
-                        item(key = "feedback") {
+
+                        item(key = "join-lounge") {
                             OverviewScreenLink(
                                 onClick = {
-                                    Toast.makeText(
+                                    val intent = Intent(
                                         context,
-                                        context.getString(R.string.comingsoon_toast),
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                    // navController.navigate("feedback")
+                                        InviteActivity::class.java
+                                    ).setAction(Intent.ACTION_VIEW)
+
+                                    intent.data = "https://stt.gg/Testers".toUri()
+                                    context.startActivity(intent)
                                 },
                                 backgroundColour = MaterialTheme.colorScheme.primary,
                                 foregroundColour = MaterialTheme.colorScheme.onPrimary,
@@ -367,14 +373,14 @@ fun OverviewScreen(
                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
                                         Icon(
-                                            painter = painterResource(R.drawable.ic_star_shine_24dp),
+                                            painter = painterResource(R.drawable.ic_waving_hand_24dp),
                                             contentDescription = null,
                                             modifier = Modifier.size(22.dp)
                                         )
-                                        Text(stringResource(R.string.overview_screen_feedback))
+                                        Text(stringResource(R.string.overview_screen_join_lounge))
                                     }
                                 },
-                                body = { Text(stringResource(R.string.overview_screen_feedback_description)) }
+                                body = { Text(stringResource(R.string.overview_screen_join_lounge_description)) }
                             )
                         }
                     }

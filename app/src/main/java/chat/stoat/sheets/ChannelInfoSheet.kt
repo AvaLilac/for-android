@@ -109,6 +109,7 @@ fun ChannelInfoSheet(channelId: String, onHideSheet: suspend () -> Unit) {
             channelIcon = channel.icon,
             channelType = channel.channelType ?: ChannelType.TextChannel,
             channelDescription = channel.description,
+            serverId = channel.server,
             dmPartner = partner
         )
         HorizontalDivider()
@@ -184,7 +185,8 @@ fun ChannelInfoSheet(channelId: String, onHideSheet: suspend () -> Unit) {
         }
     }
 
-    SheetButton(
+    // FIXME: Waiting on backend!
+    /*SheetButton(
         headlineContent = {
             Text(
                 text = stringResource(id = R.string.channel_info_sheet_options_notifications_manage),
@@ -197,7 +199,7 @@ fun ChannelInfoSheet(channelId: String, onHideSheet: suspend () -> Unit) {
             )
         },
         onClick = {}
-    )
+    )*/
 
     SheetButton(
         headlineContent = {

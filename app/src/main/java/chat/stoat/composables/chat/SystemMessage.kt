@@ -1,6 +1,7 @@
 package chat.stoat.composables.chat
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -28,7 +29,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import chat.stoat.R
-import chat.stoat.composables.markdown.RichMarkdown
+import chat.stoat.api.StoatAPI
+import chat.stoat.composables.markdown.prose.ChatMarkdown
 import chat.stoat.core.model.schemas.Message
 
 enum class SystemMessageType(val type: String) {
@@ -44,6 +46,7 @@ enum class SystemMessageType(val type: String) {
     USER_JOINED("user_joined"),
     MESSAGE_PINNED("message_pinned"),
     MESSAGE_UNPINNED("message_unpinned"),
+    CALL_STARTED("call_started"),
     TEXT("text")
 }
 
@@ -52,8 +55,12 @@ fun String?.mention(): String {
 }
 
 @Composable
-fun SystemMessage(message: Message) {
+fun SystemMessage(
+    message: Message,
+    onClick: (() -> Unit)? = null,
+) {
     if (message.system == null) return
+    val serverId = StoatAPI.channelCache[message.channel]?.server
 
     val systemMessageType =
         SystemMessageType.entries.firstOrNull { it.type == message.system!!.type }
@@ -72,6 +79,7 @@ fun SystemMessage(message: Message) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
+                .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
                 .padding(horizontal = 10.dp, vertical = 4.dp)
                 .fillMaxWidth()
         ) {
@@ -81,119 +89,141 @@ fun SystemMessage(message: Message) {
 
             when (systemMessageType) {
                 SystemMessageType.CHANNEL_OWNERSHIP_CHANGED -> {
-                    RichMarkdown(
+                    ChatMarkdown(
                         stringResource(
                             R.string.system_message_ownership_changed,
                             message.system!!.from.mention(),
                             message.system!!.to.mention()
-                        )
+                        ),
+                        serverId = serverId
                     )
                 }
 
                 SystemMessageType.CHANNEL_ICON_CHANGED -> {
-                    RichMarkdown(
+                    ChatMarkdown(
                         stringResource(
                             R.string.system_message_channel_icon_changed,
                             message.system!!.by.mention()
-                        )
+                        ),
+                        serverId = serverId
                     )
                 }
 
                 SystemMessageType.CHANNEL_DESCRIPTION_CHANGED -> {
-                    RichMarkdown(
+                    ChatMarkdown(
                         stringResource(
                             R.string.system_message_channel_description_changed,
                             message.system!!.by.mention()
-                        )
+                        ),
+                        serverId = serverId
                     )
                 }
 
                 SystemMessageType.CHANNEL_RENAMED -> {
-                    RichMarkdown(
+                    ChatMarkdown(
                         stringResource(
                             R.string.system_message_channel_renamed,
                             message.system!!.by.mention(),
                             "**${message.system!!.name ?: stringResource(R.string.unknown)}**"
-                        )
+                        ),
+                        serverId = serverId
                     )
                 }
 
                 SystemMessageType.USER_REMOVE -> {
-                    RichMarkdown(
+                    ChatMarkdown(
                         stringResource(
                             R.string.system_message_user_removed,
                             message.system!!.by.mention(),
                             message.system!!.id.mention()
-                        )
+                        ),
+                        serverId = serverId
                     )
                 }
 
                 SystemMessageType.USER_ADDED -> {
-                    RichMarkdown(
+                    ChatMarkdown(
                         stringResource(
                             R.string.system_message_user_added,
                             message.system!!.by.mention(),
                             message.system!!.id.mention()
-                        )
+                        ),
+                        serverId = serverId
                     )
                 }
 
                 SystemMessageType.USER_BANNED -> {
-                    RichMarkdown(
+                    ChatMarkdown(
                         stringResource(
                             R.string.system_message_user_banned,
                             message.system!!.id.mention()
-                        )
+                        ),
+                        serverId = serverId
                     )
                 }
 
                 SystemMessageType.USER_KICKED -> {
-                    RichMarkdown(
+                    ChatMarkdown(
                         stringResource(
                             R.string.system_message_user_kicked,
                             message.system!!.id.mention()
-                        )
+                        ),
+                        serverId = serverId
                     )
                 }
 
                 SystemMessageType.USER_LEFT -> {
-                    RichMarkdown(
+                    ChatMarkdown(
                         stringResource(
                             R.string.system_message_user_left,
                             message.system!!.id.mention()
-                        )
+                        ),
+                        serverId = serverId
                     )
                 }
 
                 SystemMessageType.USER_JOINED -> {
-                    RichMarkdown(
+                    ChatMarkdown(
                         stringResource(
                             R.string.system_message_user_joined,
                             message.system!!.id.mention()
-                        )
+                        ),
+                        serverId = serverId
                     )
                 }
 
                 SystemMessageType.MESSAGE_PINNED -> {
-                    RichMarkdown(
+                    ChatMarkdown(
                         stringResource(
                             R.string.system_message_message_pinned,
                             message.system!!.by.mention()
-                        )
+                        ),
+                        serverId = serverId
                     )
                 }
 
                 SystemMessageType.MESSAGE_UNPINNED -> {
-                    RichMarkdown(
+                    ChatMarkdown(
                         stringResource(
                             R.string.system_message_message_unpinned,
                             message.system!!.by.mention()
-                        )
+                        ),
+                        serverId = serverId
+                    )
+                }
+
+                SystemMessageType.CALL_STARTED -> {
+                    ChatMarkdown(
+                        stringResource(
+                            R.string.system_message_call_started,
+                            message.system!!.by.mention()
+                        ),
+                        serverId = serverId
                     )
                 }
 
                 SystemMessageType.TEXT -> {
-                    message.system!!.content?.let { RichMarkdown(it) }
+                    message.system!!.content?.let { ChatMarkdown(it) }
                 }
             }
         }
@@ -315,6 +345,15 @@ fun SystemMessageIcon(type: SystemMessageType, modifier: Modifier = Modifier, si
             )
         }
 
+        SystemMessageType.CALL_STARTED -> {
+            Icon(
+                painter = painterResource(R.drawable.ic_call_24dp__fill),
+                contentDescription = stringResource(R.string.system_message_call_started_alt),
+                tint = LocalContentColor.current,
+                modifier = modifier.size(size)
+            )
+        }
+
         SystemMessageType.TEXT -> {
             Icon(
                 painter = painterResource(R.drawable.ic_info_24dp),
@@ -342,6 +381,7 @@ private fun shapeForType(type: SystemMessageType): Shape {
         SystemMessageType.USER_JOINED -> MaterialShapes.Cookie9Sided
         SystemMessageType.MESSAGE_PINNED -> MaterialShapes.Clover4Leaf
         SystemMessageType.MESSAGE_UNPINNED -> MaterialShapes.Clover8Leaf
+        SystemMessageType.CALL_STARTED -> MaterialShapes.Fan
         SystemMessageType.TEXT -> MaterialShapes.Square
     }.toShape()
 }

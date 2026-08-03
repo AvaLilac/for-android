@@ -42,12 +42,12 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.navigation.NavController
 import chat.stoat.R
 import chat.stoat.api.routes.push.subscribePush
+import chat.stoat.api.settings.SyncedSettings
 import chat.stoat.dialogs.NotificationRationaleDialog
 import chat.stoat.persistence.Database
 import chat.stoat.persistence.KVStorage
@@ -57,12 +57,10 @@ import com.google.android.gms.common.ConnectionResult
 import com.google.android.gms.common.GoogleApiAvailabilityLight
 import com.google.android.gms.tasks.OnCompleteListener
 import com.google.firebase.messaging.FirebaseMessaging
-import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.launch
-import javax.inject.Inject
+import org.koin.androidx.compose.koinViewModel
 
-@HiltViewModel
-class DebugSettingsScreenViewModel @Inject constructor(
+class DebugSettingsScreenViewModel(
     private val kvStorage: KVStorage
 ) : ViewModel() {
     fun forgetAllSparks() {
@@ -91,7 +89,7 @@ class DebugSettingsScreenViewModel @Inject constructor(
 
     fun forgetLatestChangelog() {
         viewModelScope.launch {
-            kvStorage.remove("latestChangelogRead")
+            SyncedSettings.resetReleaseNotes()
         }
     }
 
@@ -103,7 +101,7 @@ class DebugSettingsScreenViewModel @Inject constructor(
 @Composable
 fun DebugSettingsScreen(
     navController: NavController,
-    viewModel: DebugSettingsScreenViewModel = hiltViewModel()
+    viewModel: DebugSettingsScreenViewModel = koinViewModel()
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -279,7 +277,7 @@ fun DebugSettingsScreen(
                 }
 
                 Text(
-                    text = "Changelogs",
+                    text = "Release Notes (Gazette)",
                     style = MaterialTheme.typography.headlineSmall,
                     modifier = Modifier.padding(bottom = 10.dp)
                 )

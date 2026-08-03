@@ -51,7 +51,7 @@ import chat.stoat.composables.chat.UserBadgeList
 import chat.stoat.composables.chat.UserBadgeRow
 import chat.stoat.composables.generic.NonIdealState
 import chat.stoat.composables.generic.UserAvatar
-import chat.stoat.composables.markdown.RichMarkdown
+import chat.stoat.composables.markdown.prose.ChatMarkdown
 import chat.stoat.composables.screens.settings.RawUserOverview
 import chat.stoat.composables.screens.settings.UserButtons
 import chat.stoat.composables.sheets.SheetTile
@@ -190,7 +190,8 @@ fun UserInfoSheet(
                                         RoleListEntry(
                                             label = role.name ?: "null",
                                             brush = role.colour?.let { BrushCompat.parseColour(it) }
-                                                ?: Brush.solidColor(LocalContentColor.current)
+                                                ?: Brush.solidColor(LocalContentColor.current),
+                                            icon = role.icon
                                         )
                                     }
                                 }
@@ -205,8 +206,9 @@ fun UserInfoSheet(
                                 role?.let {
                                     RoleListEntry(
                                         label = role.name ?: "null",
-                                        brush = role.colour?.let { BrushCompat.parseColour(it) }
-                                            ?: Brush.solidColor(LocalContentColor.current)
+                                        brush = role.colour?.let { c -> BrushCompat.parseColour(c) }
+                                            ?: Brush.solidColor(LocalContentColor.current),
+                                        icon = role.icon
                                     )
                                 }
                             }
@@ -403,11 +405,11 @@ fun UserInfoSheet(
                         Text(stringResource(R.string.user_info_sheet_category_bio))
                     },
                     contentPreview = {
-                        RichMarkdown(input = profile?.content!!)
+                        ChatMarkdown(content = profile?.content!!, serverId = serverId)
                     }
                 ) {
                     SelectionContainer(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                        RichMarkdown(input = profile?.content!!)
+                        ChatMarkdown(content = profile?.content!!, serverId = serverId)
                     }
                 }
             }

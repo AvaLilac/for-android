@@ -1,12 +1,13 @@
 package chat.stoat.api.realtime
 
+import android.os.SystemClock
 import android.util.Log
 import androidx.compose.runtime.mutableStateOf
 import chat.stoat.StoatApplication
-import chat.stoat.api.STOAT_WEBSOCKET
 import chat.stoat.api.StoatAPI
 import chat.stoat.api.StoatHttp
 import chat.stoat.api.StoatJson
+import chat.stoat.api.internals.ActiveSlowmode
 import chat.stoat.api.realtime.frames.receivable.AnyFrame
 import chat.stoat.api.realtime.frames.receivable.BulkFrame
 import chat.stoat.api.realtime.frames.receivable.ChannelAckFrame
@@ -31,6 +32,7 @@ import chat.stoat.api.realtime.frames.receivable.ServerRoleUpdateFrame
 import chat.stoat.api.realtime.frames.receivable.ServerUpdateFrame
 import chat.stoat.api.realtime.frames.receivable.UserMoveVoiceChannelFrame
 import chat.stoat.api.realtime.frames.receivable.UserRelationshipFrame
+import chat.stoat.api.realtime.frames.receivable.UserSlowmodesFrame
 import chat.stoat.api.realtime.frames.receivable.UserUpdateFrame
 import chat.stoat.api.realtime.frames.receivable.UserVoiceStateUpdateFrame
 import chat.stoat.api.realtime.frames.receivable.VoiceChannelJoinFrame
@@ -41,13 +43,14 @@ import chat.stoat.api.realtime.frames.sendable.BeginTypingFrame
 import chat.stoat.api.realtime.frames.sendable.EndTypingFrame
 import chat.stoat.api.realtime.frames.sendable.PingFrame
 import chat.stoat.api.routes.server.fetchMember
-import chat.stoat.core.model.schemas.Channel
-import chat.stoat.core.model.schemas.ChannelType
-import chat.stoat.core.model.util.ChannelVoiceState
-import chat.stoat.core.model.schemas.Role
 import chat.stoat.api.settings.LoadedSettings
 import chat.stoat.api.settings.SyncedSettings
 import chat.stoat.c2dm.ChannelRegistrator
+import chat.stoat.core.model.data.STOAT_WEBSOCKET
+import chat.stoat.core.model.schemas.Channel
+import chat.stoat.core.model.schemas.ChannelType
+import chat.stoat.core.model.schemas.Role
+import chat.stoat.core.model.util.ChannelVoiceState
 import chat.stoat.persistence.Database
 import chat.stoat.persistence.SqlStorage
 import io.ktor.client.plugins.websocket.ws
@@ -57,8 +60,11 @@ import io.ktor.websocket.WebSocketSession
 import io.ktor.websocket.close
 import io.ktor.websocket.readText
 import io.ktor.websocket.send
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.consumeEach
 import kotlinx.serialization.SerializationException
+import logcat.LogPriority
+import logcat.asLog
 import logcat.logcat
 
 enum class DisconnectionState {
@@ -94,37 +100,54 @@ object RealtimeSocket {
 
         socket?.close(CloseReason(CloseReason.Codes.NORMAL, "Reconnecting to websocket."))
 
-        StoatHttp.ws(STOAT_WEBSOCKET) {
-            socket = this
+        var activeSocket: WebSocketSession? = null
+        try {
+            StoatHttp.ws(STOAT_WEBSOCKET) {
+                activeSocket = this
+                socket = this
 
-            Log.d("RealtimeSocket", "Connected to websocket.")
-            updateDisconnectionState(DisconnectionState.Connected)
-            pushReconnectEvent()
+                logcat { "Connected to websocket." }
+                updateDisconnectionState(DisconnectionState.Connected)
+                pushReconnectEvent()
 
-            // Send authorization frame
-            val authFrame = AuthorizationFrame("Authenticate", token)
-            val authFrameString =
-                StoatJson.encodeToString(AuthorizationFrame.serializer(), authFrame)
+                // Send authorization frame
+                val authFrame = AuthorizationFrame("Authenticate", token)
+                val authFrameString =
+                    StoatJson.encodeToString(AuthorizationFrame.serializer(), authFrame)
 
-            Log.d(
-                "RealtimeSocket",
-                "Sending authorization frame: ${
-                    authFrameString.replace(
-                        token,
-                        "X".repeat(token.length)
-                    )
-                }"
-            )
-            send(StoatJson.encodeToString(AuthorizationFrame.serializer(), authFrame))
-
-            incoming.consumeEach { frame ->
-                if (frame is Frame.Text) {
-                    val frameString = frame.readText()
-                    val frameType =
-                        StoatJson.decodeFromString(AnyFrame.serializer(), frameString).type
-
-                    handleFrame(frameType, frameString)
+                logcat {
+                    "Sending authorization frame: ${
+                        authFrameString.replace(
+                            token,
+                            "X".repeat(token.length)
+                        )
+                    }"
                 }
+                send(StoatJson.encodeToString(AuthorizationFrame.serializer(), authFrame))
+
+                incoming.consumeEach { frame ->
+                    if (frame is Frame.Text) {
+                        val frameString = frame.readText()
+                        try {
+                            val frameType =
+                                StoatJson.decodeFromString(AnyFrame.serializer(), frameString).type
+
+                            handleFrame(frameType, frameString)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            logcat(LogPriority.ERROR) {
+                                "Failed to handle frame: $frameString\n" + e.asLog()
+                            }
+                        }
+                    }
+                }
+            }
+        } finally {
+            if (activeSocket == null || socket === activeSocket) {
+                socket = null
+                updateDisconnectionState(DisconnectionState.Disconnected)
+                logcat { "WebSocket disconnected." }
             }
         }
     }
@@ -156,6 +179,7 @@ object RealtimeSocket {
 
             "Ready" -> {
                 val readyFrame = StoatJson.decodeFromString(ReadyFrame.serializer(), rawFrame)
+                StoatAPI.userSlowmodeCache.clear()
 
                 logcat {
                     "Received ready frame with ${readyFrame.users.size} users, " +
@@ -454,15 +478,17 @@ object RealtimeSocket {
                 val existing = StoatAPI.userCache[userUpdateFrame.id]
                     ?: return // if we don't have the user no point in updating it
 
-                if (userUpdateFrame.clear != null) {
-                    if (userUpdateFrame.clear.contains("Avatar")) {
-                        StoatAPI.userCache[userUpdateFrame.id] =
-                            existing.copy(avatar = null)
+                var updated = existing.mergeWithPartial(userUpdateFrame.data)
+
+                userUpdateFrame.clear?.forEach {
+                    updated = when (it) {
+                        "Avatar" -> updated.copy(avatar = null)
+                        "Pronouns" -> updated.copy(pronouns = null)
+                        else -> updated
                     }
                 }
 
-                StoatAPI.userCache[userUpdateFrame.id] =
-                    existing.mergeWithPartial(userUpdateFrame.data)
+                StoatAPI.userCache[userUpdateFrame.id] = updated
             }
 
             "UserRelationship" -> {
@@ -493,8 +519,15 @@ object RealtimeSocket {
                 val existing = StoatAPI.channelCache[channelUpdateFrame.id]
                     ?: return // if we don't have the channel no point in updating it
 
-                val combined = existing.mergeWithPartial(channelUpdateFrame.data)
+                var combined = existing.mergeWithPartial(channelUpdateFrame.data)
+                if ("Slowmode" in channelUpdateFrame.clear.orEmpty()) {
+                    combined = combined.copy(slowmode = null)
+                }
+
                 StoatAPI.channelCache[channelUpdateFrame.id] = combined
+                if ((combined.slowmode ?: 0) <= 0) {
+                    StoatAPI.userSlowmodeCache.remove(channelUpdateFrame.id)
+                }
 
                 database.channelQueries.upsert(
                     channelUpdateFrame.id,
@@ -556,6 +589,7 @@ object RealtimeSocket {
                 }
 
                 StoatAPI.channelCache.remove(channelDeleteFrame.id)
+                StoatAPI.userSlowmodeCache.remove(channelDeleteFrame.id)
                 database.channelQueries.delete(channelDeleteFrame.id)
 
                 if (currentChannel.server != null) {
@@ -587,6 +621,17 @@ object RealtimeSocket {
                 )
 
                 StoatAPI.unreads.processExternalAck(channelAckFrame.id, channelAckFrame.messageId)
+            }
+
+            "UserSlowmodes" -> {
+                val userSlowmodesFrame =
+                    StoatJson.decodeFromString(UserSlowmodesFrame.serializer(), rawFrame)
+                val receivedAt = SystemClock.elapsedRealtime()
+
+                userSlowmodesFrame.slowmodes.forEach { slowmode ->
+                    StoatAPI.userSlowmodeCache[slowmode.channelId] =
+                        ActiveSlowmode.from(slowmode, receivedAt)
+                }
             }
 
             "ServerCreate" -> {
@@ -713,6 +758,7 @@ object RealtimeSocket {
                     when (it) {
                         "Avatar" -> updated = updated.copy(avatar = null)
                         "Nickname" -> updated = updated.copy(nickname = null)
+                        "Pronouns" -> updated = updated.copy(pronouns = null)
                         else -> Log.e("RealtimeSocket", "Unknown server member clear field: $it")
                     }
                 }
@@ -886,10 +932,10 @@ object RealtimeSocket {
                 val userVoiceStateUpdateFrame =
                     StoatJson.decodeFromString(UserVoiceStateUpdateFrame.serializer(), rawFrame)
 
-                logcat { "Received user voice state update frame for user ${userVoiceStateUpdateFrame.id} in channel ${userVoiceStateUpdateFrame.id}." }
+                logcat { "Received user voice state update frame for user ${userVoiceStateUpdateFrame.id} in channel ${userVoiceStateUpdateFrame.channelId}." }
 
                 val existingChannelState =
-                    StoatAPI.voiceStateCache[userVoiceStateUpdateFrame.id] ?: return
+                    StoatAPI.voiceStateCache[userVoiceStateUpdateFrame.channelId] ?: return
 
                 val newParticipants = existingChannelState.participants.map {
                     if (it.id == userVoiceStateUpdateFrame.id) {
@@ -899,8 +945,8 @@ object RealtimeSocket {
                     }
                 }
 
-                StoatAPI.voiceStateCache[userVoiceStateUpdateFrame.id] =
-                    ChannelVoiceState(userVoiceStateUpdateFrame.id, newParticipants)
+                StoatAPI.voiceStateCache[userVoiceStateUpdateFrame.channelId] =
+                    ChannelVoiceState(userVoiceStateUpdateFrame.channelId, newParticipants)
             }
 
             "UserMoveVoiceChannel" -> {

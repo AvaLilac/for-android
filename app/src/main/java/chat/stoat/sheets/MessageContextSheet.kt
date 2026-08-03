@@ -29,23 +29,22 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
-import chat.stoat.BuildConfig
 import chat.stoat.R
-import chat.stoat.api.STOAT_WEB_APP
 import chat.stoat.api.StoatAPI
 import chat.stoat.api.internals.PermissionBit
 import chat.stoat.api.internals.Roles
 import chat.stoat.api.internals.has
 import chat.stoat.api.routes.channel.deleteMessage
 import chat.stoat.api.routes.channel.react
-import chat.stoat.api.settings.Experiments
 import chat.stoat.callbacks.UiCallbacks
 import chat.stoat.composables.chat.Message
 import chat.stoat.composables.generic.SheetButton
+import chat.stoat.core.model.data.STOAT_WEB_APP
 import chat.stoat.internals.Platform
 import kotlinx.coroutines.launch
 
@@ -69,15 +68,13 @@ fun MessageContextSheet(
     }
 
     val context = LocalContext.current
+    val resources = LocalResources.current
     val clipboardManager = LocalClipboardManager.current
     val coroutineScope = rememberCoroutineScope()
 
     var showShareSheet by remember { mutableStateOf(false) }
     var showReactSheet by remember { mutableStateOf(false) }
     var showDeleteMessageConfirmation by remember { mutableStateOf(false) }
-    var showInspectASTSheet by remember { mutableStateOf(false) }
-    val showInspectASTSheetButton =
-        BuildConfig.DEBUG || (message.content != null && Experiments.useKotlinBasedMarkdownRenderer.isEnabled)
 
     if (showShareSheet) {
         val shareSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -111,7 +108,7 @@ fun MessageContextSheet(
                                 onHideSheet()
                                 Toast.makeText(
                                     context,
-                                    context.getString(
+                                    resources.getString(
                                         R.string.message_context_sheet_actions_copy_failed_empty
                                     ),
                                     Toast.LENGTH_SHORT
@@ -123,7 +120,7 @@ fun MessageContextSheet(
                         if (Platform.needsShowClipboardNotification()) {
                             Toast.makeText(
                                 context,
-                                context.getString(R.string.copied),
+                                resources.getString(R.string.copied),
                                 Toast.LENGTH_SHORT
                             ).show()
                         }
@@ -156,7 +153,7 @@ fun MessageContextSheet(
                         if (message.content.isNullOrEmpty()) {
                             Toast.makeText(
                                 context,
-                                context.getString(
+                                resources.getString(
                                     R.string.message_context_sheet_actions_copy_failed_empty
                                 ),
                                 Toast.LENGTH_SHORT
@@ -172,17 +169,19 @@ fun MessageContextSheet(
                             return@SheetButton
                         }
 
-                        val server = StoatAPI.serverCache.values.find { server ->
-                            server.channels?.contains(message.channel) ?: false
+                        val serverId = StoatAPI.channelCache[message.channel]?.server
+                        val messagePath = if (serverId != null) {
+                            "/server/$serverId/channel/${message.channel}/${message.id}"
+                        } else {
+                            "/channel/${message.channel}/${message.id}"
                         }
-                        val messageLink =
-                            "$STOAT_WEB_APP/server/${server?.id}/channel/${message.channel}/${message.id}"
+                        val messageLink = "$STOAT_WEB_APP$messagePath"
 
                         clipboardManager.setText(AnnotatedString(messageLink))
                         if (Platform.needsShowClipboardNotification()) {
                             Toast.makeText(
                                 context,
-                                context.getString(
+                                resources.getString(
                                     R.string.message_context_sheet_actions_copy_link_copied
                                 ),
                                 Toast.LENGTH_SHORT
@@ -220,7 +219,7 @@ fun MessageContextSheet(
                         if (Platform.needsShowClipboardNotification()) {
                             Toast.makeText(
                                 context,
-                                context.getString(
+                                resources.getString(
                                     R.string.message_context_sheet_actions_copy_id_copied
                                 ),
                                 Toast.LENGTH_SHORT
@@ -305,19 +304,6 @@ fun MessageContextSheet(
                 }
             }
         )
-    }
-
-    if (showInspectASTSheet) {
-        val inspectASTSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-
-        ModalBottomSheet(
-            sheetState = inspectASTSheetState,
-            onDismissRequest = {
-                showInspectASTSheet = false
-            }
-        ) {
-            JBMDebuggerSheet(message.content ?: "")
-        }
     }
 
     Column(
@@ -412,7 +398,7 @@ fun MessageContextSheet(
             onClick = {
                 Toast.makeText(
                     context,
-                    context.getString(R.string.comingsoon_toast),
+                    resources.getString(R.string.comingsoon_toast),
                     Toast.LENGTH_SHORT
                 ).show()
 
@@ -421,26 +407,6 @@ fun MessageContextSheet(
                 }
             }
         )
-
-        if (showInspectASTSheetButton) {
-            SheetButton(
-                leadingContent = {
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_account_tree_24dp),
-                        contentDescription = null
-                    )
-                },
-                headlineContent = {
-                    Text(
-                        text = "Inspect AST"
-                    )
-                },
-                onClick = {
-                    showInspectASTSheet = true
-                },
-                special = true
-            )
-        }
 
         SheetButton(
             leadingContent = {
